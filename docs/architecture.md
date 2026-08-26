@@ -123,6 +123,21 @@ Weather Details is a native requester showing optional pressure, cloud cover,
 visibility, precipitation, gust, and wind-direction fields only when supplied.
 Wind bearings use an eight-point deterministic compass helper.
 
+## BBS door foundation
+
+M8.0 introduces a BBS-independent door layer in `include/amiweather/door.h`
+and `src/door/door.c`. It renders the committed report as bounded ASCII text,
+dispatches the H/D/7/A/W/L/R/Q command vocabulary, and depends only on the
+weather/location domain helpers. `AmiWeatherDoor` is a separate Amiga
+executable with a small DOS stream terminal adapter and its own 32 KiB
+StackSwap-protected entry point; it does not link Intuition or GadTools.
+
+The terminal abstraction covers bounded writes, key input, connection state,
+and terminal width. A generic Shell/stdio adapter is used for development;
+it is not an ABBS implementation. No authoritative ABBS 3.3 door invocation
+or ABI documentation is present in this repository, so `adapter_abbs.c` is an
+explicit skeleton and M8.1 must obtain the real interface before integration.
+
 The expanded report is 1172 bytes under the m68k ABI. The Amiga entry point
 uses Exec `StackSwap()` with a 32768-byte `AllocMem()` stack before calling
 `amiweather_gui_run()`, and restores the original stack before freeing it.

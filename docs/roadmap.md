@@ -25,6 +25,14 @@
 - **M7 — Release Hardening / Aminet 0.1.0 (complete):** extended forecast
   views, native stack compatibility, and manual QA on Kickstart 40.68 /
   Workbench 40.42.
+- **M8.0 — BBS Door Foundation (complete):** separate AmiWeatherDoor target,
+  shared weather core, bounded ASCII terminal presentation, and a documented
+  adapter boundary without guessed BBS ABI details.
+- **M8.1 — ABBS 3.3 Integration:** implement the documented ABBS adapter once
+  authoritative invocation/API material is available.
+- **M8.2 — ABBS Runtime Qualification:** qualify the integrated door on ABBS.
+- **M8.3 — Second BBS Adapter / AmiExpress investigation:** study and design
+  the next adapter only after ABBS experience.
 
 Each milestone should remain independently testable and avoid prematurely
 introducing background or elaborate UI infrastructure.

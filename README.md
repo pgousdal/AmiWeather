@@ -7,6 +7,11 @@ saved locations, current conditions, five daily rows, and a twelve-entry hourly
 forecast, while remaining an early build
 and a native 12-entry hourly forecast.
 
+M8.0 adds the foundation of a separate `AmiWeatherDoor` terminal program.
+It shares the weather/domain and Open-Meteo core with the GUI and provides a
+plain-text, host-testable presentation layer. ABBS 3.3 invocation is not yet
+implemented; no undocumented BBS ABI is assumed.
+
 The Amiga interface uses Intuition and GadTools on the user's public screen.
 It has **no MUI, ReAction, SDL, Qt, GTK, or portable GUI-toolkit dependency**.
 AmiWeather consumes [AmiAPI](../AmiAPI/README.md) as an external SDK and does
@@ -32,6 +37,10 @@ For the native cross-build (using `m68k-amigaos-gcc` and `-m68020`):
 ```sh
 make PLATFORM=amiga AMIAPI_DIR=../AmiAPI
 ```
+
+The Amiga build produces both `build/amiga/AmiWeather` and
+`build/amiga/AmiWeatherDoor`. The door uses no Intuition or GadTools and is
+intended for a documented BBS adapter in M8.1.
 
 `AMIAPI_DIR` defaults to `../AmiAPI`. The build checks for its public headers
 and `build/libamiapi.a` and gives a direct error if either is absent. It never
