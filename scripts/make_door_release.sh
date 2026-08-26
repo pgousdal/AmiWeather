@@ -31,7 +31,7 @@ cp "$root/contrib/abbs/Node0Config.example" "$stage/ABBS/Node0Config.example"
 cp "$root/contrib/abbs/Node0Menu.example" "$stage/ABBS/Node0Menu.example"
 
 cat > "$external_readme" <<EOF
-Short:        Weather BBS door for classic AmigaOS
+Short:        Weather BBS door for ABBS 3.x
 Uploader:     amiweather@ousdal.org (Per Gustav Ousdal)
 Author:       Per Gustav Ousdal
 Type:         comm/bbs
@@ -81,7 +81,7 @@ cp "$external_readme" "$stage/AmiWeatherDoor.readme"
 cmp -s "$external_readme" "$stage/AmiWeatherDoor.readme"
 
 short=$(sed -n 's/^Short:[[:space:]]*//p' "$external_readme")
-[ "$short" = "Weather BBS door for classic AmigaOS" ]
+[ "$short" = "Weather BBS door for ABBS 3.x" ]
 [ "${#short}" -le 40 ]
 awk 'length($0) > 78 { exit 1 }' "$external_readme"
 ! LC_ALL=C grep -q "$(printf '\r')" "$external_readme"
