@@ -47,3 +47,5 @@ Credits
 -------
 Weather/geocoding: Open-Meteo. HTTP/API SDK: AmiAPI. HTTPS/TLS: AmiSSL 5.
 These projects are independent; no endorsement is implied.
+
+Project contact: amiweather@ousdal.org

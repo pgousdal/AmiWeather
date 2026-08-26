@@ -130,3 +130,7 @@ staging tree. The release script generates an Aminet-style readme with hashes
 from the exact staged executable, creates an LHA archive with `jlha`, and the
 validation script tests/list-extracts it and verifies the executable hash.
 The archive is not uploaded automatically.
+
+## Contact
+
+Project contact: amiweather@ousdal.org

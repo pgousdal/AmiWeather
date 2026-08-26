@@ -17,6 +17,7 @@ md5=$(md5sum "$stage/AmiWeather" | awk '{print $1}')
 cat > "$stage/AmiWeather.readme" <<EOF
 Short:        Native weather client for classic AmigaOS
 Author:       Per Gustav Ousdal
+Contact:      amiweather@ousdal.org
 Uploader:     (not specified)
 Type:         comm/misc
 Version:      $version
