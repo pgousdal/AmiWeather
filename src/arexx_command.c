@@ -135,7 +135,7 @@ int amiweather_arexx_command(const char *command, size_t command_length,
         fetched = operations->fetch(state->location, state->preferences->temperature_unit, state->preferences->wind_unit, &updated);
         if (state->refresh_active) *state->refresh_active = 0;
         if (state->last_result) *state->last_result = fetched;
-        if (fetched.error != AMIWEATHER_OK) { set_result(result, result_size, fetched.diagnostic[0] ? fetched.diagnostic : amiweather_error_string(fetched.error)); return AMIWEATHER_AREXX_UNAVAILABLE; }
+        if (fetched.error != AMIWEATHER_OK) { set_result(result, result_size, fetched.diagnostic[0] ? fetched.diagnostic : amiweather_error_string(fetched.error)); return AMIWEATHER_AREXX_GEOCODING_FAILED; }
         *state->report = updated; *state->has_report = 1; set_result(result, result_size, "OK"); return 0;
     }
     if (strlen(text) > 9 && starts(text, "LOCATION") &&
@@ -149,7 +149,7 @@ int amiweather_arexx_command(const char *command, size_t command_length,
         if (locations.count != 1) { set_result(result, result_size, locations.count ? "AMBIGUOUS LOCATION" : "LOCATION NOT FOUND"); return locations.count ? AMIWEATHER_AREXX_AMBIGUOUS_LOCATION : AMIWEATHER_AREXX_GEOCODING_FAILED; }
         fetched = operations->fetch(&locations.locations[0], state->preferences->temperature_unit, state->preferences->wind_unit, &updated);
         if (state->last_result) *state->last_result = fetched;
-        if (fetched.error != AMIWEATHER_OK) { set_result(result, result_size, fetched.diagnostic[0] ? fetched.diagnostic : amiweather_error_string(fetched.error)); return AMIWEATHER_AREXX_UNAVAILABLE; }
+        if (fetched.error != AMIWEATHER_OK) { set_result(result, result_size, fetched.diagnostic[0] ? fetched.diagnostic : amiweather_error_string(fetched.error)); return AMIWEATHER_AREXX_GEOCODING_FAILED; }
         *state->location = locations.locations[0]; *state->has_location = 1; *state->report = updated; *state->has_report = 1;
         amiweather_location_format(state->location, result, result_size); return 0;
     }

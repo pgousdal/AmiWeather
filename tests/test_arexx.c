@@ -3,7 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 
-static int failures, search_count = 1, search_fails, saved, save_fails;
+static int failures, search_count = 1, search_fails, fetch_fails;
+static int fetch_calls, saved, save_fails;
+static struct AmiWeatherPreferences last_saved;
 #define CHECK(x) do { if (!(x)) { fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #x); ++failures; } } while (0)
 
 static struct AmiWeatherLocation grimstad(void)
@@ -34,14 +36,16 @@ static struct AmiWeatherResult mock_fetch(const struct AmiWeatherLocation *locat
     struct AmiWeatherReport *report)
 {
     struct AmiWeatherResult r;
-    (void)location; memset(&r, 0, sizeof(r)); memset(report, 0, sizeof(*report));
+    (void)location; ++fetch_calls; memset(&r, 0, sizeof(r));
+    if (fetch_fails) { r.error = AMIWEATHER_ERR_NETWORK; return r; }
+    memset(report, 0, sizeof(*report));
     report->temperature_unit = temperature; report->wind_unit = wind;
     report->current.temperature_c = 12.3; report->current.relative_humidity_percent = 67;
     report->current.wind_speed_kmh = 4.5; report->current.weather_code = 0; return r;
 }
 
 static enum AmiWeatherPreferencesError mock_save(struct AmiWeatherPreferences *p)
-{ (void)p; ++saved; return save_fails ? AMIWEATHER_PREFS_IO_ERROR : AMIWEATHER_PREFS_OK; }
+{ ++saved; last_saved = *p; return save_fails ? AMIWEATHER_PREFS_IO_ERROR : AMIWEATHER_PREFS_OK; }
 
 static int command(const char *text, struct AmiWeatherARexxState *state,
     const struct AmiWeatherARexxOperations *ops, char *result)
@@ -72,28 +76,64 @@ int main(void)
     search_count = 2;
     CHECK(command("LOCATION Grimstad", &state, &ops, result) == AMIWEATHER_AREXX_AMBIGUOUS_LOCATION);
     CHECK(!has_location && !has_report);
+    CHECK(saved == 0);
+    search_count = 0;
+    CHECK(command("LOCATION Missing", &state, &ops, result) == AMIWEATHER_AREXX_GEOCODING_FAILED);
+    CHECK(!has_location && !has_report);
     search_count = 1;
     search_fails = 1;
     CHECK(command("LOCATION Grimstad", &state, &ops, result) == AMIWEATHER_AREXX_GEOCODING_FAILED);
     search_fails = 0;
+    fetch_fails = 1;
+    CHECK(command("LOCATION Grimstad", &state, &ops, result) == AMIWEATHER_AREXX_GEOCODING_FAILED);
+    CHECK(!has_location && !has_report);
+    fetch_fails = 0;
+    fetch_calls = 0;
     CHECK(command("LOCATION Grimstad", &state, &ops, result) == 0);
-    CHECK(has_location && has_report && strcmp(location.name, "Grimstad") == 0);
+    CHECK(fetch_calls == 1 && has_location && has_report &&
+          strcmp(location.name, "Grimstad") == 0);
+    CHECK(saved == 0);
+    snprintf(location.name, sizeof(location.name), "%s", "Previous");
+    report.current.temperature_c = 33.3;
+    fetch_fails = 1;
+    CHECK(command("LOCATION Grimstad", &state, &ops, result) ==
+          AMIWEATHER_AREXX_GEOCODING_FAILED);
+    CHECK(strcmp(location.name, "Previous") == 0 &&
+          report.current.temperature_c == 33.3 && saved == 0);
+    fetch_fails = 0;
+    CHECK(command("LOCATION Grimstad", &state, &ops, result) == 0);
     CHECK(command("GET LOCATION", &state, &ops, result) == 0 && strstr(result, "Grimstad") != NULL);
     CHECK(command("GET TEMPERATURE", &state, &ops, result) == 0 && strcmp(result, "12.3 F") == 0);
     CHECK(command("GET CONDITION", &state, &ops, result) == 0 && result[0]);
     CHECK(command("GET HUMIDITY", &state, &ops, result) == 0 && strcmp(result, "67 %") == 0);
     CHECK(command("GET WIND", &state, &ops, result) == 0 && strcmp(result, "4.5 mph") == 0);
     CHECK(command("REFRESH", &state, &ops, result) == 0);
+    fetch_fails = 1;
+    CHECK(command("REFRESH", &state, &ops, result) ==
+          AMIWEATHER_AREXX_GEOCODING_FAILED);
+    CHECK(report.current.temperature_c == 12.3);
+    fetch_fails = 0;
     CHECK(command("SET TEMPUNIT C", &state, &ops, result) == 0);
     CHECK(command("SET TEMPUNIT F", &state, &ops, result) == 0);
     CHECK(command("SET WINDUNIT KMH", &state, &ops, result) == 0);
     CHECK(command("SET WINDUNIT MPH", &state, &ops, result) == 0);
     CHECK(command("SETDEFAULT", &state, &ops, result) == 0 && saved == 1);
     CHECK(preferences.has_default_location);
+    CHECK(last_saved.has_default_location &&
+          strcmp(last_saved.saved_locations[last_saved.default_location_index].name,
+                 "Grimstad") == 0);
     CHECK(command("SAVE", &state, &ops, result) == 0 && saved == 2);
+    CHECK(last_saved.temperature_unit == AMIWEATHER_TEMPERATURE_FAHRENHEIT);
+    CHECK(last_saved.wind_unit == AMIWEATHER_WIND_MPH);
     save_fails = 1;
     CHECK(command("SAVE", &state, &ops, result) == AMIWEATHER_AREXX_SAVE_FAILED);
     save_fails = 0;
+    {
+        struct AmiWeatherARexxOperations unavailable_ops = ops;
+        unavailable_ops.fetch = NULL;
+        CHECK(command("REFRESH", &state, &unavailable_ops, result) ==
+              AMIWEATHER_AREXX_UNAVAILABLE);
+    }
     CHECK(command("", &state, &ops, result) == AMIWEATHER_AREXX_INVALID_ARGUMENTS);
     CHECK(command("LOCATION ", &state, &ops, result) == AMIWEATHER_AREXX_INVALID_ARGUMENTS);
     CHECK(command("SET TEMPUNIT X", &state, &ops, result) == AMIWEATHER_AREXX_INVALID_ARGUMENTS);

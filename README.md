@@ -145,7 +145,7 @@ commands are `VERSION`, `STATUS`, `REFRESH`, `GET LOCATION`, `GET TEMPERATURE`,
 `SETDEFAULT`, `SET TEMPUNIT C|F`, `SET WINDUNIT KMH|MPH`, and `SAVE`.
 Queries return bounded text in `RESULT`; successful mutations return `OK`.
 Return code 10 means unknown command, 11 invalid arguments, 12 no report, 13 no
-location, 14 ambiguous location, 15 geocoding failure, 16 save failure, and 17
+location, 14 ambiguous location, 15 location/geocoding network failure, 16 save failure, and 17
 an unavailable operation/state. `LOCATION` commits only when geocoding returns
 exactly one result and its weather fetch succeeds; it never guesses among
 multiple results and does not persist without `SETDEFAULT` or `SAVE`.
