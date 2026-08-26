@@ -18,7 +18,7 @@ cat > "$stage/AmiWeather.readme" <<EOF
 Short:        Native weather client for classic AmigaOS
 Author:       Per Gustav Ousdal
 Contact:      amiweather@ousdal.org
-Uploader:     (not specified)
+Uploader:     Per Gustav Ousdal <amiweather@ousdal.org>
 Type:         comm/misc
 Version:      $version
 Architecture: 68020+, AmigaOS 3.x
