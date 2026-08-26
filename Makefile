@@ -1,0 +1,67 @@
+PLATFORM ?= posix
+AMIAPI_DIR ?= ../AmiAPI
+BUILD := build/$(PLATFORM)
+AMIAPI_INCLUDE := $(AMIAPI_DIR)/include
+AMIAPI_LIB := $(AMIAPI_DIR)/build/libamiapi.a
+
+CFLAGS ?= -O2 -Wall -Wextra -pedantic
+CPPFLAGS += -Iinclude -I$(AMIAPI_INCLUDE)
+COMMON_SRC := src/weather.c src/openmeteo.c
+COMMON_OBJ := $(patsubst src/%.c,$(BUILD)/%.o,$(COMMON_SRC))
+
+ifeq ($(PLATFORM),posix)
+CC ?= cc
+PROGRAM := $(BUILD)/amiweather-posix
+PLATFORM_OBJ := $(BUILD)/main_posix.o
+LDLIBS += -lssl -lcrypto
+else ifeq ($(PLATFORM),amiga)
+ifeq ($(origin CC),default)
+CC := m68k-amigaos-gcc
+endif
+CFLAGS += -m68020
+CPPFLAGS += -I/opt/amiga/AmiSSL/Developer/include
+PROGRAM := $(BUILD)/AmiWeather
+PLATFORM_OBJ := $(BUILD)/main_amiga.o $(BUILD)/gui_amiga.o
+LDLIBS += -L/opt/amiga/AmiSSL/Developer/lib/AmigaOS3 -lamisslauto
+else
+$(error Unknown PLATFORM '$(PLATFORM)'; use posix or amiga)
+endif
+
+.PHONY: all clean test smoke check-sdk
+all: check-sdk $(PROGRAM)
+
+check-sdk:
+	@test -f "$(AMIAPI_INCLUDE)/amiapi/amiapi.h" || \
+	  { echo "Missing AmiAPI public headers under $(AMIAPI_INCLUDE)"; exit 1; }
+	@test -f "$(AMIAPI_LIB)" || \
+	  { echo "Missing AmiAPI library $(AMIAPI_LIB); build the matching platform in AmiAPI first"; exit 1; }
+
+$(BUILD):
+	mkdir -p $@
+
+$(BUILD)/%.o: src/%.c | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+$(PROGRAM): $(COMMON_OBJ) $(PLATFORM_OBJ) $(AMIAPI_LIB)
+	$(CC) $(CFLAGS) $(COMMON_OBJ) $(PLATFORM_OBJ) $(AMIAPI_LIB) $(LDLIBS) -o $@
+
+test: check-sdk
+ifeq ($(PLATFORM),posix)
+	$(MAKE) $(BUILD)/test_openmeteo PLATFORM=posix AMIAPI_DIR="$(AMIAPI_DIR)"
+	$(BUILD)/test_openmeteo
+else
+	@echo "Fixture tests run on the POSIX host: make PLATFORM=posix test"
+endif
+
+$(BUILD)/test_openmeteo: tests/test_openmeteo.c $(COMMON_OBJ) $(AMIAPI_LIB)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(COMMON_OBJ) $(AMIAPI_LIB) $(LDLIBS) -lm -o $@
+
+smoke: all
+ifeq ($(PLATFORM),posix)
+	$(PROGRAM)
+else
+	@echo "Run the Amiga executable on a configured AmigaOS system."
+endif
+
+clean:
+	rm -rf build
