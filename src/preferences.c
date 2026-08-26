@@ -393,3 +393,67 @@ enum AmiWeatherPreferencesError amiweather_preferences_save_file(
     path_remove(backup);
     return AMIWEATHER_PREFS_OK;
 }
+
+enum AmiWeatherPreferencesError amiweather_preferences_load_resolved(
+    const char *env_path, const char *envarc_path,
+    struct AmiWeatherPreferences *preferences)
+{
+    enum AmiWeatherPreferencesError env_result, archive_result;
+    if (!env_path || !envarc_path || !preferences)
+        return AMIWEATHER_PREFS_INVALID;
+    env_result = amiweather_preferences_load_file(env_path, preferences);
+    if (env_result == AMIWEATHER_PREFS_OK)
+        return AMIWEATHER_PREFS_OK;
+    archive_result = amiweather_preferences_load_file(envarc_path, preferences);
+    if (archive_result == AMIWEATHER_PREFS_OK)
+        return AMIWEATHER_PREFS_OK;
+    if (env_result == AMIWEATHER_PREFS_NOT_FOUND &&
+        archive_result == AMIWEATHER_PREFS_NOT_FOUND)
+        return AMIWEATHER_PREFS_NOT_FOUND;
+    return archive_result;
+}
+
+enum AmiWeatherPreferencesError amiweather_preferences_save_persistent(
+    const char *envarc_path, const char *env_path,
+    struct AmiWeatherPreferences *preferences)
+{
+    enum AmiWeatherPreferencesError result;
+    enum AmiWeatherPreferencesError previous_result;
+    struct AmiWeatherPreferences previous;
+    if (!envarc_path || !env_path || !preferences)
+        return AMIWEATHER_PREFS_INVALID;
+    previous_result = amiweather_preferences_load_file(envarc_path, &previous);
+    result = amiweather_preferences_save_file(envarc_path, preferences);
+    if (result != AMIWEATHER_PREFS_OK)
+        return result;
+    result = amiweather_preferences_save_file(env_path, preferences);
+    if (result != AMIWEATHER_PREFS_OK) {
+        if (previous_result == AMIWEATHER_PREFS_OK)
+            (void)amiweather_preferences_save_file(envarc_path, &previous);
+        else if (previous_result == AMIWEATHER_PREFS_NOT_FOUND)
+            (void)path_remove(envarc_path);
+    }
+    return result;
+}
+
+enum AmiWeatherPreferencesError amiweather_preferences_set_default_location(
+    struct AmiWeatherPreferences *preferences,
+    const struct AmiWeatherLocation *location)
+{
+    size_t i;
+    enum AmiWeatherPreferencesError result;
+    if (!preferences || !location || !location->name[0])
+        return AMIWEATHER_PREFS_INVALID;
+    for (i = 0; i < preferences->saved_location_count; ++i) {
+        if (amiweather_location_equal(&preferences->saved_locations[i], location)) {
+            amiweather_preferences_set_default(preferences, i);
+            return AMIWEATHER_PREFS_OK;
+        }
+    }
+    result = amiweather_preferences_add_location(preferences, location);
+    if (result != AMIWEATHER_PREFS_OK)
+        return result;
+    amiweather_preferences_set_default(preferences,
+        preferences->saved_location_count - 1);
+    return AMIWEATHER_PREFS_OK;
+}

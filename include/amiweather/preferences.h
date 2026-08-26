@@ -7,6 +7,8 @@
 #define AMIWEATHER_PREFERENCES_VERSION 1U
 #define AMIWEATHER_MAX_SAVED_LOCATIONS 8
 #define AMIWEATHER_PREFERENCES_LINE_SIZE 512
+#define AMIWEATHER_ENV_PATH "ENV:AmiWeather/preferences"
+#define AMIWEATHER_ENVARC_PATH "ENVARC:AmiWeather/preferences"
 
 enum AmiWeatherTemperatureUnit {
     AMIWEATHER_TEMPERATURE_CELSIUS = 0,
@@ -49,6 +51,15 @@ enum AmiWeatherPreferencesError amiweather_preferences_load_file(
     const char *path, struct AmiWeatherPreferences *preferences);
 enum AmiWeatherPreferencesError amiweather_preferences_save_file(
     const char *path, struct AmiWeatherPreferences *preferences);
+enum AmiWeatherPreferencesError amiweather_preferences_load_resolved(
+    const char *env_path, const char *envarc_path,
+    struct AmiWeatherPreferences *preferences);
+enum AmiWeatherPreferencesError amiweather_preferences_save_persistent(
+    const char *envarc_path, const char *env_path,
+    struct AmiWeatherPreferences *preferences);
+enum AmiWeatherPreferencesError amiweather_preferences_set_default_location(
+    struct AmiWeatherPreferences *preferences,
+    const struct AmiWeatherLocation *location);
 int amiweather_location_equal(const struct AmiWeatherLocation *left,
                               const struct AmiWeatherLocation *right);
 enum AmiWeatherPreferencesError amiweather_preferences_add_location(

@@ -36,8 +36,10 @@
   qualified on ABBS 3.3 / AmigaOS 3.1.
 - **M8.3 — Second BBS Adapter / AmiExpress investigation:** study and design
   the next adapter only after ABBS experience.
-- **M9 — Native ARexx Interface:** future persistent application port named
-  `AMIWEATHER` for status, refresh, location, and report automation.
+- **M9 — Persistent Preferences + Native GUI ARexx Interface (implemented,
+  awaiting manual Amiga qualification):** shared ENV/ENVARC persistence,
+  explicit no-default first-run behavior, GUI default selection, shared Door
+  preferences, and the bounded public GUI `AMIWEATHER` port.
 - **M8.4 — AmiWeatherDoor 0.1.0 Packaging:** standalone Aminet packaging for
   the runtime-qualified ABBS door; upload remains an explicit manual step.
 

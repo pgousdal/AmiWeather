@@ -10,14 +10,12 @@
 #include <stdio.h>
 
 #define AMIWEATHER_DOOR_INPUT_SIZE 64
-#define AMIWEATHER_ENV_PATH "ENV:AmiWeather/preferences"
-#define AMIWEATHER_ENVARC_PATH "ENVARC:AmiWeather/preferences"
-
 struct AmiWeatherDoorState {
     struct AmiWeatherPreferences preferences;
     struct AmiWeatherLocation location;
     struct AmiWeatherReport report;
     int has_report;
+    int has_location;
 };
 
 static struct AmiWeatherDoorState door_state;
@@ -108,22 +106,26 @@ static void load_start_location(void)
 {
     enum AmiWeatherPreferencesError error;
     amiweather_preferences_default(&door_state.preferences);
-    error = amiweather_preferences_load_file(AMIWEATHER_ENV_PATH,
-                                             &door_state.preferences);
-    if (error != AMIWEATHER_PREFS_OK)
-        (void)amiweather_preferences_load_file(AMIWEATHER_ENVARC_PATH,
-                                               &door_state.preferences);
-    if (door_state.preferences.has_default_location)
+    error = amiweather_preferences_load_resolved(
+        AMIWEATHER_ENV_PATH, AMIWEATHER_ENVARC_PATH, &door_state.preferences);
+    if (error != AMIWEATHER_PREFS_OK && error != AMIWEATHER_PREFS_NOT_FOUND)
+        amiweather_preferences_default(&door_state.preferences);
+    if (door_state.preferences.has_default_location) {
         door_state.location = door_state.preferences.saved_locations[
             door_state.preferences.default_location_index];
-    else
-        amiweather_location_default(&door_state.location);
+        door_state.has_location = 1;
+    }
 }
 
 static int refresh_report(const struct AmiWeatherDoorTerminal *terminal)
 {
     struct AmiWeatherResult result;
     static struct AmiWeatherReport candidate;
+    if (!door_state.has_location) {
+        amiweather_door_write(terminal,
+            "No default location configured.\nPress L to select a location.\n");
+        return 0;
+    }
     if (!fetch_location(&door_state.location, &candidate, &result)) {
         show_error(terminal, "Weather update", &result);
         return 0;
@@ -172,6 +174,7 @@ static int choose_location(const struct AmiWeatherDoorTerminal *terminal)
         return 1;
     }
     door_state.location = results.locations[selected];
+    door_state.has_location = 1;
     door_state.report = candidate;
     door_state.has_report = 1;
     return 1;
@@ -219,11 +222,17 @@ int amiweather_door_amiga_run(void)
     terminal.connected = amiga_connected;
     terminal.width = 80;
     load_start_location();
-    (void)refresh_report(&terminal);
+    if (door_state.has_location)
+        (void)refresh_report(&terminal);
     if (door_state.has_report)
         amiweather_door_render_home(&terminal, &door_state.location, &door_state.report);
+    else if (!door_state.has_location)
+        amiweather_door_write(&terminal,
+            "AmiWeather\n==========\nNo default location configured.\n"
+            "Press L to select a location.\n");
     else
-        amiweather_door_write(&terminal, "AmiWeather\n==========\nWeather unavailable.\n");
+        amiweather_door_write(&terminal,
+            "AmiWeather\n==========\nWeather unavailable.\n");
     for (;;) {
         amiweather_door_write(&terminal, "\n[H] Hourly [D] Daily [7] 7 day [A] 14 day [W] Details\n[L] Location [R] Refresh [Q] Return to BBS\n> ");
         if (!read_command(&terminal, &key)) return 0;
@@ -233,7 +242,7 @@ int amiweather_door_amiga_run(void)
             if (refresh_report(&terminal))
                 amiweather_door_render_home(&terminal, &door_state.location, &door_state.report);
         } else if (command == AMIWEATHER_DOOR_COMMAND_LOCATION) {
-            if (choose_location(&terminal))
+            if (choose_location(&terminal) && door_state.has_report)
                 amiweather_door_render_home(&terminal, &door_state.location, &door_state.report);
         } else if (command != AMIWEATHER_DOOR_COMMAND_NONE) {
             render_view(&terminal, command);

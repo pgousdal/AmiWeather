@@ -26,7 +26,8 @@ builder, bounds the response to 64 KiB, applies a 20-second network timeout,
 checks for a 2xx HTTP status, and parses the response with AmiAPI's public JSON
 API. All acquired network objects unwind through one cleanup path.
 
-M6 stores an in-memory selected location, initially the configured default or
+The application stores an in-memory selected location, initially the configured
+default. With no default the location is absent and neither frontend fetches
 Oslo. Geocoding requests
 up to eight English-labelled results and requires a nonempty name plus valid
 coordinates; region, country, country code, and timezone are optional. Weather
@@ -98,7 +99,7 @@ fetch-before-commit behavior. List mutations operate on a copy and commit in
 memory only after persistence succeeds. Duplicate identity is name, country
 code, timezone, and coordinates rounded to six decimals. Removing an item
 compacts the array and adjusts a later default index; removing the default
-chooses the first remaining entry, while an empty list falls back to Oslo.
+chooses the first remaining entry, while an empty list has no default.
 
 The Preferences window uses GadTools cycle gadgets for Celsius/Fahrenheit and
 km/h/mph. Open-Meteo receives both selected unit parameters in the same query,
@@ -183,8 +184,9 @@ second concurrent IDCMP lifetime.
 
 ## Preference persistence
 
-The parser and explicit-path file I/O are platform-neutral project code; Amiga
-path policy remains in the native frontend. Version 1 is bounded line-oriented
+The parser, explicit-path file I/O, ENV/ENVARC resolution, persistent two-copy
+publication, and default-location transition are shared platform-neutral
+project code used by GUI and Door. Version 1 is bounded line-oriented
 text, never raw struct data, and records units, optional default index, and
 pipe-delimited location fields with decimal coordinates. Lines are limited to
 511 bytes, files to 8 KiB, locations to eight, reserved delimiters are rejected,
@@ -194,12 +196,31 @@ usability and are not overwritten merely by launching.
 
 Startup prefers `ENV:AmiWeather/preferences`, then
 `ENVARC:AmiWeather/preferences`. Save creates missing AmiWeather drawers,
-publishes ENVARC first, and mirrors ENV. If the mirror fails it is removed,
-leaving ENVARC unambiguous on fallback. Each file is written to `.new`, flushed
+publishes ENVARC first, and mirrors ENV. Failure of either copy is reported;
+an ENV failure triggers best-effort restoration of the prior ENVARC copy.
+Each file is written to `.new`, flushed
 and closed, the prior target is moved to `.old`, and the new file is renamed
 into place. Publication failure attempts rollback; success removes the backup.
 This avoids exposing a partially written open file without assuming atomic
 rename-over-existing behavior on every classic Amiga filesystem.
+
+## ARexx host boundary
+
+Only the GUI owns the public `AMIWEATHER` Exec port. Startup opens
+`rexxsyslib.library`, checks and registers the name under `Forbid()`/`Permit()`,
+and continues without automation if it cannot safely claim the name. Its signal
+bit is combined with the Intuition UserPort signal in one `Wait()`. At most four
+messages are processed per pass. Shutdown removes the public name before
+draining queued requests with an unavailable return code, deletes the port, and
+closes the library.
+
+The platform-neutral bounded command dispatcher wraps the same geocoder,
+weather fetch, preference state, and persistent-save callbacks as GUI actions.
+It accepts at most 255 command bytes and emits at most 255 result bytes.
+`LOCATION` requires exactly one result, fetches before committing, and reports
+ambiguity rather than selecting arbitrarily. The Door links only generic
+command-domain code through the common objects and has no Exec ARexx transport,
+public port, or rexxsyslib dependency.
 
 ## Visual polish and release packaging
 

@@ -218,6 +218,41 @@ static void test_explicit_file_io(void)
     remove(path);
 }
 
+static void test_resolution_and_persistent_save(void)
+{
+    char env_path[128], archive_path[128];
+    struct AmiWeatherPreferences source, loaded;
+    struct AmiWeatherLocation location = location_make("Grimstad", 58.34, 8.59);
+    FILE *file;
+    snprintf(env_path, sizeof(env_path), "/tmp/amiweather-env-%ld", (long)getpid());
+    snprintf(archive_path, sizeof(archive_path), "/tmp/amiweather-envarc-%ld", (long)getpid());
+    remove(env_path); remove(archive_path);
+    amiweather_preferences_default(&source);
+    CHECK(amiweather_preferences_load_resolved(env_path, archive_path, &loaded) ==
+          AMIWEATHER_PREFS_NOT_FOUND);
+    CHECK(amiweather_preferences_set_default_location(&source, &location) ==
+          AMIWEATHER_PREFS_OK);
+    source.temperature_unit = AMIWEATHER_TEMPERATURE_FAHRENHEIT;
+    CHECK(amiweather_preferences_save_persistent(archive_path, env_path, &source) ==
+          AMIWEATHER_PREFS_OK);
+    CHECK(amiweather_preferences_load_file(env_path, &loaded) == AMIWEATHER_PREFS_OK);
+    CHECK(loaded.has_default_location && loaded.temperature_unit == AMIWEATHER_TEMPERATURE_FAHRENHEIT);
+    file = fopen(env_path, "wb");
+    CHECK(file != NULL);
+    if (file) { CHECK(fputs("invalid\n", file) >= 0); CHECK(fclose(file) == 0); }
+    CHECK(amiweather_preferences_load_resolved(env_path, archive_path, &loaded) ==
+          AMIWEATHER_PREFS_OK);
+    CHECK(strcmp(loaded.saved_locations[loaded.default_location_index].name,
+                 "Grimstad") == 0);
+    source.wind_unit = AMIWEATHER_WIND_MPH;
+    CHECK(amiweather_preferences_save_persistent(archive_path,
+          "/tmp/amiweather-prefs-impossible/preferences", &source) ==
+          AMIWEATHER_PREFS_IO_ERROR);
+    CHECK(amiweather_preferences_load_file(archive_path, &loaded) == AMIWEATHER_PREFS_OK);
+    CHECK(loaded.wind_unit == AMIWEATHER_WIND_KMH);
+    remove(env_path); remove(archive_path);
+}
+
 int main(void)
 {
     test_defaults_and_units();
@@ -228,6 +263,7 @@ int main(void)
     test_eight_and_ninth_in_format();
     test_query_units();
     test_explicit_file_io();
+    test_resolution_and_persistent_save();
     if (failures) { fprintf(stderr, "%d preference test(s) failed\n", failures); return 1; }
     puts("AmiWeather preference tests passed");
     return 0;

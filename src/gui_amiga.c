@@ -1,5 +1,6 @@
 #include <amiweather/openmeteo.h>
 #include <amiweather/preferences.h>
+#include <amiweather/arexx.h>
 
 #include <exec/types.h>
 #include <exec/libraries.h>
@@ -29,7 +30,7 @@
 #define GID_RESULTS 12
 #define GID_USE 13
 #define GID_CANCEL 14
-#define SEARCH_TEXT_SIZE 80
+#define SEARCH_TEXT_SIZE AMIWEATHER_LOCATION_QUERY_SIZE
 #define GID_SAVED_LIST 20
 #define GID_SAVED_USE 21
 #define GID_SAVED_ADD 22
@@ -40,9 +41,6 @@
 #define GID_PREF_WIND 31
 #define GID_PREF_SAVE 32
 #define GID_PREF_CANCEL 33
-
-#define AMIWEATHER_ENV_PATH "ENV:AmiWeather/preferences"
-#define AMIWEATHER_ENVARC_PATH "ENVARC:AmiWeather/preferences"
 
 struct IntuitionBase *IntuitionBase;
 struct Library *GadToolsBase;
@@ -60,7 +58,9 @@ struct ApplicationState {
     struct AmiWeatherResult result;
     struct AmiWeatherLocation location;
     struct AmiWeatherPreferences preferences;
-    BOOL has_report;
+    int has_report;
+    int has_location;
+    int refresh_active;
 };
 
 struct WindowLayout {
@@ -113,7 +113,8 @@ enum MenuAction {
     MENU_DAILY,
     MENU_7DAY,
     MENU_14DAY,
-    MENU_DETAILS
+    MENU_DETAILS,
+    MENU_SET_DEFAULT
 };
 
 static struct Menu *create_application_menus(APTR visual_info)
@@ -132,6 +133,8 @@ static struct Menu *create_application_menus(APTR visual_info)
           (APTR)MENU_CHANGE },
         { NM_ITEM, (CONST_STRPTR)"Saved Locations...", (CONST_STRPTR)"L", 0, 0,
           (APTR)MENU_LOCATIONS },
+        { NM_ITEM, (CONST_STRPTR)"Set Current as Default", NULL, 0, 0,
+          (APTR)MENU_SET_DEFAULT },
         { NM_TITLE, (CONST_STRPTR)"Forecast", NULL, 0, 0, NULL },
         { NM_ITEM, (CONST_STRPTR)"Hourly...", (CONST_STRPTR)"H", 0, 0,
           (APTR)MENU_HOURLY },
@@ -330,6 +333,13 @@ static void draw_content(struct Window *window,
     SetAPen(rp, window->WScreen->DetailPen);
 
     supported_style = AskSoftStyle(rp);
+    if (!application->has_location) {
+        SetSoftStyle(rp, FSF_BOLD, supported_style);
+        draw_line(rp, layout, 0, "No default location configured.");
+        SetSoftStyle(rp, FS_NORMAL, supported_style);
+        draw_line(rp, layout, 2, "Choose Change... to select a location.");
+        return;
+    }
     SetSoftStyle(rp, FSF_BOLD, supported_style);
     amiweather_location_format(&application->location, line, sizeof(line));
     draw_line(rp, layout, 0, line);
@@ -447,12 +457,15 @@ static void fetch_weather(struct Window *window,
     static struct AmiWeatherReport updated;
     struct AmiWeatherResult result;
 
+    if (!application->has_location) return;
+    application->refresh_active = 1;
     application->view = VIEW_LOADING;
     draw_content(window, layout, application);
     result = amiweather_openmeteo_fetch_report_units(
         &application->location, application->preferences.temperature_unit,
         application->preferences.wind_unit, &updated);
     application->result = result;
+    application->refresh_active = 0;
     if (result.error == AMIWEATHER_OK) {
         application->report = updated;
         application->has_report = TRUE;
@@ -646,30 +659,16 @@ static enum AmiWeatherPreferencesError save_preferences(
 {
     enum AmiWeatherPreferencesError result;
     ensure_preferences_directories();
-    result = amiweather_preferences_save_file(AMIWEATHER_ENVARC_PATH, preferences);
-    if (result != AMIWEATHER_PREFS_OK)
-        return result;
-    result = amiweather_preferences_save_file(AMIWEATHER_ENV_PATH, preferences);
-    if (result != AMIWEATHER_PREFS_OK)
-        DeleteFile((CONST_STRPTR)AMIWEATHER_ENV_PATH);
-    return AMIWEATHER_PREFS_OK;
+    result = amiweather_preferences_save_persistent(
+        AMIWEATHER_ENVARC_PATH, AMIWEATHER_ENV_PATH, preferences);
+    return result;
 }
 
 static enum AmiWeatherPreferencesError load_preferences(
     struct AmiWeatherPreferences *preferences)
 {
-    enum AmiWeatherPreferencesError env_result, archive_result;
-    env_result = amiweather_preferences_load_file(AMIWEATHER_ENV_PATH, preferences);
-    if (env_result == AMIWEATHER_PREFS_OK)
-        return env_result;
-    archive_result = amiweather_preferences_load_file(AMIWEATHER_ENVARC_PATH,
-                                                       preferences);
-    if (archive_result == AMIWEATHER_PREFS_OK)
-        return AMIWEATHER_PREFS_OK;
-    if (env_result == AMIWEATHER_PREFS_NOT_FOUND &&
-        archive_result == AMIWEATHER_PREFS_NOT_FOUND)
-        return AMIWEATHER_PREFS_NOT_FOUND;
-    return archive_result;
+    return amiweather_preferences_load_resolved(
+        AMIWEATHER_ENV_PATH, AMIWEATHER_ENVARC_PATH, preferences);
 }
 
 static void show_preferences_error(struct Window *parent, const char *title,
@@ -1103,6 +1102,9 @@ int amiweather_gui_run(void)
     BOOL fortnight_requested;
     BOOL details_requested;
     struct Menu *menus = NULL;
+    struct AmiWeatherARexxHost *arexx_host = NULL;
+    struct AmiWeatherARexxState arexx_state;
+    struct AmiWeatherARexxOperations arexx_operations;
     enum MenuAction menu_action;
     enum AmiWeatherPreferencesError preferences_load_result;
     char window_title[32];
@@ -1118,8 +1120,7 @@ int amiweather_gui_run(void)
     if (application.preferences.has_default_location)
         application.location = application.preferences.saved_locations[
             application.preferences.default_location_index];
-    else
-        amiweather_location_default(&application.location);
+    application.has_location = application.preferences.has_default_location;
     snprintf(window_title, sizeof(window_title), "AmiWeather %s", AMIWEATHER_VERSION);
     IntuitionBase = (struct IntuitionBase *)OpenLibrary("intuition.library", 39);
     GadToolsBase = OpenLibrary("gadtools.library", 39);
@@ -1192,17 +1193,42 @@ int amiweather_gui_run(void)
         goto cleanup;
     SetMenuStrip(window, menus);
 
+    arexx_host = amiweather_arexx_host_open();
+    memset(&arexx_state, 0, sizeof(arexx_state));
+    arexx_state.preferences = &application.preferences;
+    arexx_state.location = &application.location;
+    arexx_state.report = &application.report;
+    arexx_state.has_location = &application.has_location;
+    arexx_state.has_report = &application.has_report;
+    arexx_state.refresh_active = &application.refresh_active;
+    arexx_state.last_result = &application.result;
+    arexx_operations.search = amiweather_geocode_search;
+    arexx_operations.fetch = amiweather_openmeteo_fetch_report_units;
+    arexx_operations.save = save_preferences;
+
     layout.left = window->BorderLeft + 12;
     layout.content_top = window->BorderTop + window->RPort->TxHeight + 6;
     GT_RefreshWindow(window, NULL);
     draw_content(window, &layout, &application);
-    fetch_weather(window, &layout, &application);
+    if (application.has_location)
+        fetch_weather(window, &layout, &application);
+    else {
+        application.view = VIEW_ERROR;
+        draw_content(window, &layout, &application);
+    }
     if (preferences_load_result != AMIWEATHER_PREFS_OK &&
         preferences_load_result != AMIWEATHER_PREFS_NOT_FOUND)
         show_preferences_error(window, "Preferences ignored", preferences_load_result);
 
     while (running) {
-        Wait(1UL << window->UserPort->mp_SigBit);
+        ULONG signals = Wait((1UL << window->UserPort->mp_SigBit) |
+            amiweather_arexx_host_signal(arexx_host));
+        if (arexx_host && (signals & amiweather_arexx_host_signal(arexx_host))) {
+            amiweather_arexx_host_process(arexx_host, &arexx_state,
+                                           &arexx_operations);
+            application.view = application.has_report ? VIEW_WEATHER : VIEW_ERROR;
+            draw_content(window, &layout, &application);
+        }
         while ((message = GT_GetIMsg(window->UserPort)) != NULL) {
             class = message->Class;
             code = message->Code;
@@ -1230,6 +1256,22 @@ int amiweather_gui_run(void)
                     change_requested = TRUE;
                 else if (menu_action == MENU_LOCATIONS)
                     locations_requested = TRUE;
+                else if (menu_action == MENU_SET_DEFAULT) {
+                    struct AmiWeatherPreferences changed = application.preferences;
+                    enum AmiWeatherPreferencesError save_result;
+                    if (!application.has_location)
+                        show_preferences_error(window, "Default location", AMIWEATHER_PREFS_INVALID);
+                    else {
+                        save_result = amiweather_preferences_set_default_location(
+                            &changed, &application.location);
+                        if (save_result == AMIWEATHER_PREFS_OK)
+                            save_result = save_preferences(&changed);
+                        if (save_result == AMIWEATHER_PREFS_OK)
+                            application.preferences = changed;
+                        else
+                            show_preferences_error(window, "Default location not saved", save_result);
+                    }
+                }
                 else if (menu_action == MENU_HOURLY)
                     hourly_requested = TRUE;
                 else if (menu_action == MENU_PREFERENCES)
@@ -1276,6 +1318,7 @@ int amiweather_gui_run(void)
                         application.preferences.wind_unit, &updated);
                     if (fetch_result.error == AMIWEATHER_OK) {
                         application.location = candidate;
+                        application.has_location = TRUE;
                         application.report = updated;
                         application.has_report = TRUE;
                         application.result = fetch_result;
@@ -1300,6 +1343,7 @@ int amiweather_gui_run(void)
                         application.preferences.wind_unit, &updated);
                     if (fetch_result.error == AMIWEATHER_OK) {
                         application.location = candidate;
+                        application.has_location = TRUE;
                         application.report = updated;
                         application.result = fetch_result;
                         application.has_report = TRUE;
@@ -1317,6 +1361,15 @@ int amiweather_gui_run(void)
                     static struct AmiWeatherReport updated;
                     struct AmiWeatherResult fetch_result;
                     enum AmiWeatherPreferencesError save_result;
+                    if (!application.has_location) {
+                        save_result = save_preferences(&candidate_preferences);
+                        if (save_result == AMIWEATHER_PREFS_OK)
+                            application.preferences = candidate_preferences;
+                        else
+                            show_preferences_error(window, "Preferences not saved", save_result);
+                        draw_content(window, &layout, &application);
+                        continue;
+                    }
                     application.view = VIEW_LOADING;
                     draw_content(window, &layout, &application);
                     fetch_result = amiweather_openmeteo_fetch_report_units(
@@ -1356,6 +1409,8 @@ int amiweather_gui_run(void)
     result = 0;
 
 cleanup:
+    if (arexx_host)
+        amiweather_arexx_host_close(arexx_host);
     if (window && menus)
         ClearMenuStrip(window);
     if (window)

@@ -1,0 +1,13 @@
+/* Query the running AmiWeather GUI. */
+OPTIONS RESULTS
+ADDRESS AMIWEATHER
+'GET LOCATION'
+SAY 'Location:' RESULT
+'GET TEMPERATURE'
+SAY 'Temperature:' RESULT
+'GET CONDITION'
+SAY 'Condition:' RESULT
+'GET HUMIDITY'
+SAY 'Humidity:' RESULT
+'GET WIND'
+SAY 'Wind:' RESULT

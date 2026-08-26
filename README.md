@@ -58,7 +58,9 @@ copies or rebuilds AmiAPI.
 ## Locations, preferences, and forecast
 
 The native application opens on the user's public screen and fetches current
-weather and forecast for the configured default, or Oslo on first run.
+weather and forecast for the configured default. With no configured default it
+shows `No default location configured.` and leaves **Change...** available;
+it does not fetch Oslo or geolocate the user.
 **Change...** opens a compact native GadTools
 search window. It searches Open-Meteo's geocoding API, presents up to eight
 `place, region, country` matches, and fetches weather before committing a
@@ -66,9 +68,9 @@ selection. A failed first fetch leaves the previous location, weather, and
 forecast intact. **Locations** manages up to eight saved locations. The current
 location can be added without duplicating an existing match, and saved entries
 can be selected without another geocoding request, removed, or marked as the
-startup default. Removing the default selects the first remaining saved entry
-as default; removing the last saved entry restores the built-in Oslo startup
-fallback. It displays temperature, apparent
+startup default. **Set Current as Default** adds the active location when
+needed, makes it the default, and persists the complete preference state.
+Removing the final saved entry leaves no configured default. It displays temperature, apparent
 temperature,
 relative humidity, wind speed, a human-readable condition derived from the WMO
 weather code, and observation time local to the selected location when its
@@ -119,9 +121,11 @@ queries are unaffected; M6 does not add a general Unicode conversion layer.
 ## Preference file
 
 Classic Amiga builds read `ENV:AmiWeather/preferences` first and otherwise
-`ENVARC:AmiWeather/preferences`. Saving publishes the persistent ENVARC copy
-first and then mirrors ENV; a failed ENV mirror is removed so the next startup
-falls back to ENVARC. Missing files are normal first-run state. Malformed or
+`ENVARC:AmiWeather/preferences`. GUI and Door call the same shared resolver.
+Explicit Save publishes the persistent ENVARC copy first and then mirrors ENV,
+and reports failure if either publication fails. If the ENV publication fails,
+the previous ENVARC state is restored where possible. Missing files are normal
+first-run state. Malformed or
 unsupported files are not overwritten at launch; AmiWeather falls back safely.
 
 Format version 1 is bounded, line-oriented text with explicit `version`,
@@ -132,6 +136,23 @@ and closes a `.new` file, moves an existing file to `.old`, publishes the new
 file, rolls back on publication failure, and removes the backup after success.
 This is the safest portable strategy used because rename-over-existing behavior
 is not guaranteed across classic Amiga filesystems.
+
+## ARexx
+
+While the GUI is running it owns the public `AMIWEATHER` port. Supported V1
+commands are `VERSION`, `STATUS`, `REFRESH`, `GET LOCATION`, `GET TEMPERATURE`,
+`GET CONDITION`, `GET HUMIDITY`, `GET WIND`, `LOCATION <search text>`,
+`SETDEFAULT`, `SET TEMPUNIT C|F`, `SET WINDUNIT KMH|MPH`, and `SAVE`.
+Queries return bounded text in `RESULT`; successful mutations return `OK`.
+Return code 10 means unknown command, 11 invalid arguments, 12 no report, 13 no
+location, 14 ambiguous location, 15 geocoding failure, 16 save failure, and 17
+an unavailable operation/state. `LOCATION` commits only when geocoding returns
+exactly one result and its weather fetch succeeds; it never guesses among
+multiple results and does not persist without `SETDEFAULT` or `SAVE`.
+
+Example scripts are in `contrib/arexx/`. The GUI owns automation because it is
+the persistent application. The short-lived AmiWeatherDoor consumes the same
+preferences but intentionally has no ARexx port.
 
 Forecast storage is fixed at fourteen daily and twelve hourly application-owned
 entries; the main view remains five daily rows. M7 has no charts, maps,

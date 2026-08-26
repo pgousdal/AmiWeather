@@ -6,7 +6,7 @@ AMIAPI_LIB := $(AMIAPI_DIR)/build/libamiapi.a
 
 CFLAGS ?= -O2 -Wall -Wextra -pedantic
 CPPFLAGS += -Iinclude -I$(AMIAPI_INCLUDE)
-COMMON_SRC := src/weather.c src/preferences.c src/openmeteo.c
+COMMON_SRC := src/weather.c src/preferences.c src/openmeteo.c src/arexx_command.c
 COMMON_OBJ := $(patsubst src/%.c,$(BUILD)/%.o,$(COMMON_SRC))
 DOOR_OBJ := $(BUILD)/door/door.o $(BUILD)/door/adapter_abbs.o
 
@@ -23,7 +23,7 @@ endif
 CFLAGS += -m68020
 CPPFLAGS += -I/opt/amiga/AmiSSL/Developer/include -DAMIWEATHER_AMIGA
 PROGRAM := $(BUILD)/AmiWeather
-PLATFORM_OBJ := $(BUILD)/main_amiga.o $(BUILD)/gui_amiga.o
+PLATFORM_OBJ := $(BUILD)/main_amiga.o $(BUILD)/gui_amiga.o $(BUILD)/arexx_amiga.o
 DOOR_PROGRAM := $(BUILD)/AmiWeatherDoor
 DOOR_PLATFORM_OBJ := $(BUILD)/door/main_amiga.o $(BUILD)/door/terminal_amiga.o
 LDLIBS += -L/opt/amiga/AmiSSL/Developer/lib/AmigaOS3 -lamisslauto
@@ -59,6 +59,8 @@ ifeq ($(PLATFORM),posix)
 	$(BUILD)/test_openmeteo
 	$(MAKE) $(BUILD)/test_preferences PLATFORM=posix AMIAPI_DIR="$(AMIAPI_DIR)"
 	$(BUILD)/test_preferences
+	$(MAKE) $(BUILD)/test_arexx PLATFORM=posix AMIAPI_DIR="$(AMIAPI_DIR)"
+	$(BUILD)/test_arexx
 else
 	@echo "Fixture tests run on the POSIX host: make PLATFORM=posix test"
 endif
@@ -78,6 +80,9 @@ $(BUILD)/test_openmeteo: tests/test_openmeteo.c $(COMMON_OBJ) $(AMIAPI_LIB)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(COMMON_OBJ) $(AMIAPI_LIB) $(LDLIBS) -lm -o $@
 
 $(BUILD)/test_preferences: tests/test_preferences.c $(COMMON_OBJ) $(AMIAPI_LIB)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(COMMON_OBJ) $(AMIAPI_LIB) $(LDLIBS) -lm -o $@
+
+$(BUILD)/test_arexx: tests/test_arexx.c $(COMMON_OBJ) $(AMIAPI_LIB)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(COMMON_OBJ) $(AMIAPI_LIB) $(LDLIBS) -lm -o $@
 
 smoke: all
