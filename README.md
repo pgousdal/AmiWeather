@@ -2,7 +2,7 @@
 
 AmiWeather is a native weather application for classic AmigaOS. The primary
 target is AmigaOS 3.x on a 68020 or newer processor; no FPU or MMU is required.
-The current M5 build remains version 0.0.1. It provides persistent preferences,
+The current M6 build is version 0.1.0. It provides persistent preferences,
 saved locations, current conditions, five daily rows, and a twelve-entry hourly
 forecast, while remaining an early build
 rather than a user-ready release.
@@ -52,8 +52,8 @@ relative humidity, wind speed, a human-readable condition derived from the WMO
 weather code, and observation time local to the selected location when its
 timezone is available. A compact native table adds up to five daily rows with
 weekday/date, WMO condition, minimum and maximum temperatures, and
-precipitation probability when supplied and space permits. Current and daily
-data use one Open-Meteo request and are committed together. The GadTools
+precipitation probability when supplied and space permits. Current, daily, and
+hourly data use one Open-Meteo request and are committed together. The GadTools
 **Refresh** button (or the `R` key) updates all three forecast sections. Loading and concise errors are
 shown without discarding the last successful display; Intuition exposure
 redraws only stored state and does not initiate network traffic.
@@ -64,14 +64,16 @@ probability when available. The adapter selects the current forecast hour—the
 first validated hourly timestamp whose `YYYY-MM-DDTHH` is at or after the
 current observation hour—and then at most eleven following entries. This
 naturally crosses midnight, month, and year boundaries without POSIX date APIs.
-The listview scrolls when the screen font or height cannot show all rows.
+The listview scrolls when the screen font or height cannot show all rows. The
+current block and daily rows use a cohesive compiled-in few-color line-art icon
+set mapped centrally from WMO codes; hourly rows remain text-first for clarity.
 
 The Preferences window selects Celsius or Fahrenheit and km/h or mph. Unit
 changes fetch a complete current-plus-daily report and persist the candidate
 preferences before changing displayed state. A failed fetch or save leaves the
 old units and report intact. Amiga decimal rendering remains integer-based.
 
-Requests are synchronous in M5. Current, daily, and hourly fields use one
+Requests are synchronous in M6. Current, daily, and hourly fields use one
 Open-Meteo response and commit together. Search, a selection's initial weather fetch,
 launch, and Refresh can temporarily block GUI interaction until the request
 completes or AmiAPI's finite 20-second network
@@ -85,7 +87,7 @@ development and live-smoke-test aid, not a second product.
 Geocoding strings are kept as validated UTF-8 in bounded domain buffers.
 Classic screen fonts are not Unicode-aware, so unavailable non-Latin glyphs
 may display incorrectly and clipping is byte-oriented. Coordinates and API
-queries are unaffected; M4 does not add a general Unicode conversion layer.
+queries are unaffected; M6 does not add a general Unicode conversion layer.
 
 ## Preference file
 
@@ -105,5 +107,16 @@ This is the safest portable strategy used because rename-over-existing behavior
 is not guaranteed across classic Amiga filesystems.
 
 Forecast storage is fixed at five daily and twelve hourly application-owned
-entries. M5 has no charts, maps, custom icons, localization, asynchronous
-networking, or background refresh.
+entries. M6 has no charts, maps, animations, localization, asynchronous
+networking, or background refresh. A Workbench `.info` icon is deliberately
+deferred because no reliable icon-generation toolchain is available in the
+build environment.
+
+## Aminet release
+
+After building the Amiga AmiAPI archive, run `make release PLATFORM=amiga`.
+This creates `dist/AmiWeather-0.1.0.lha`, its `.sha256` sidecar, and a clean
+staging tree. The release script generates an Aminet-style readme with hashes
+from the exact staged executable, creates an LHA archive with `jlha`, and the
+validation script tests/list-extracts it and verifies the executable hash.
+The archive is not uploaded automatically.

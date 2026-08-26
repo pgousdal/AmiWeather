@@ -11,6 +11,21 @@
 #define AMIWEATHER_HOURLY_COUNT 12
 #define AMIWEATHER_HOURLY_TIME_SIZE 17
 #define AMIWEATHER_COMPACT_TIME_SIZE 6
+#define AMIWEATHER_VERSION "0.1.0"
+
+enum AmiWeatherIcon {
+    AMIWEATHER_ICON_UNKNOWN = 0,
+    AMIWEATHER_ICON_CLEAR,
+    AMIWEATHER_ICON_PARTLY_CLOUDY,
+    AMIWEATHER_ICON_CLOUDY,
+    AMIWEATHER_ICON_FOG,
+    AMIWEATHER_ICON_DRIZZLE,
+    AMIWEATHER_ICON_RAIN,
+    AMIWEATHER_ICON_SHOWERS,
+    AMIWEATHER_ICON_SNOW,
+    AMIWEATHER_ICON_SNOW_SHOWERS,
+    AMIWEATHER_ICON_THUNDERSTORM
+};
 
 struct AmiWeatherCurrent {
     double temperature_c;
@@ -76,6 +91,7 @@ struct AmiWeatherResult {
 
 const char *amiweather_error_string(enum AmiWeatherError error);
 const char *amiweather_wmo_description(long weather_code);
+enum AmiWeatherIcon amiweather_wmo_icon(long weather_code);
 const char *amiweather_wmo_compact_description(long weather_code);
 int amiweather_format_forecast_date(const char *iso_date,
                                     char *buffer, size_t size);

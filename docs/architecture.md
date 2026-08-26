@@ -26,7 +26,7 @@ builder, bounds the response to 64 KiB, applies a 20-second network timeout,
 checks for a 2xx HTTP status, and parses the response with AmiAPI's public JSON
 API. All acquired network objects unwind through one cleanup path.
 
-M5 stores an in-memory selected location, initially the configured default or
+M6 stores an in-memory selected location, initially the configured default or
 Oslo. Geocoding requests
 up to eight English-labelled results and requires a nonempty name plus valid
 coordinates; region, country, country code, and timezone are optional. Weather
@@ -50,7 +50,7 @@ AmiWeather domain values and application-level results. Launch,
 search, selection, and explicit Refresh actions call the synchronous adapter;
 repainting reads the
 stored state and never performs network I/O. A request can therefore block GUI
-interaction until completion or timeout in M5. Background execution remains a
+interaction until completion or timeout in M6. Background execution remains a
 later design question rather than premature infrastructure.
 
 ## Native UI direction
@@ -148,6 +148,31 @@ and closed, the prior target is moved to `.old`, and the new file is renamed
 into place. Publication failure attempts rollback; success removes the backup.
 This avoids exposing a partially written open file without assuming atomic
 rename-over-existing behavior on every classic Amiga filesystem.
+
+## Visual polish and release packaging
+
+M6 adds one centralized WMO-to-icon mapping with ten semantic families:
+clear, partly cloudy, cloudy, fog, drizzle, rain, showers, snow, snow
+showers, and thunderstorm, plus an unknown fallback. The Amiga GUI renders
+small compiled-in line-art symbols using the existing DetailPen, JAM1, and
+graphics primitives; no bitmap files, datatypes, PNG/JPEG libraries, or runtime
+allocation are involved. The current block and daily rows show icons where
+they improve hierarchy. Hourly remains text-first in its compact listview.
+
+The main window retains native buttons for Refresh, Change, Locations,
+Preferences, and Hourly. A menu bar and About requester remain deferred: the
+existing compact button layout is stable, and adding menu ownership/keyboard
+dispatch would increase M6 risk without improving the 640-pixel layout enough.
+
+The project version is 0.1.0 and is defined in the AmiWeather public weather
+header. `LICENSE` contains the MIT license naming Per Gustav Ousdal. `make
+release PLATFORM=amiga` stages only the executable, user README, license,
+Aminet readme, and architecture document, then uses `jlha` to create
+`dist/AmiWeather-0.1.0.lha`, writes its SHA-256 sidecar, and validates archive
+listing/extraction plus the staged executable hash. `jlha` stores generic LHA
+file timestamps, so archive bytes may vary by run even though the staged
+content set and embedded executable hashes are reproducible. No Workbench `.info`
+icon is shipped because no reliable icon-generation toolchain is available.
 
 Geocoding text remains validated UTF-8. Classic Amiga fonts generally do not
 render Unicode and clipping is byte-oriented, so M5 documents imperfect

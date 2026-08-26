@@ -49,7 +49,7 @@ int main(int argc, char **argv)
         return 1;
     }
     amiweather_location_format(&location, display, sizeof(display));
-    printf("AmiWeather 0.0.1 - %s\n", display);
+    printf("AmiWeather %s - %s\n", AMIWEATHER_VERSION, display);
     printf("Temperature: %.1f %s\n", report.current.temperature_c,
            amiweather_temperature_unit_label(preferences.temperature_unit));
     printf("Feels like: %.1f %s\n", report.current.apparent_temperature_c,

@@ -114,6 +114,23 @@ const char *amiweather_wmo_compact_description(long weather_code)
     }
 }
 
+enum AmiWeatherIcon amiweather_wmo_icon(long weather_code)
+{
+    switch (weather_code) {
+    case 0: return AMIWEATHER_ICON_CLEAR;
+    case 1: case 2: return AMIWEATHER_ICON_PARTLY_CLOUDY;
+    case 3: return AMIWEATHER_ICON_CLOUDY;
+    case 45: case 48: return AMIWEATHER_ICON_FOG;
+    case 51: case 53: case 55: case 56: case 57: return AMIWEATHER_ICON_DRIZZLE;
+    case 61: case 63: case 65: case 66: case 67: return AMIWEATHER_ICON_RAIN;
+    case 80: case 81: case 82: return AMIWEATHER_ICON_SHOWERS;
+    case 71: case 73: case 75: case 77: return AMIWEATHER_ICON_SNOW;
+    case 85: case 86: return AMIWEATHER_ICON_SNOW_SHOWERS;
+    case 95: case 96: case 99: return AMIWEATHER_ICON_THUNDERSTORM;
+    default: return AMIWEATHER_ICON_UNKNOWN;
+    }
+}
+
 static int leap_year(int year)
 {
     return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);

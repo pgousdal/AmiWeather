@@ -119,6 +119,54 @@ static void draw_clipped(struct RastPort *rp, WORD x, WORD y,
     }
 }
 
+/* Small, compiled-in line art: it uses only the screen's detail pen and
+ * remains legible on ECS/AGA/RTG palettes without external bitmap files. */
+static void draw_weather_icon(struct RastPort *rp, WORD x, WORD y,
+                              enum AmiWeatherIcon icon, WORD scale)
+{
+    WORD s = scale < 1 ? 1 : scale;
+    if (icon == AMIWEATHER_ICON_CLEAR || icon == AMIWEATHER_ICON_PARTLY_CLOUDY) {
+        RectFill(rp, x + 7*s, y + 2*s, x + 10*s, y + 5*s);
+        Move(rp, x + 8*s, y); Draw(rp, x + 8*s, y + 7*s);
+        Move(rp, x + 5*s, y + 1*s); Draw(rp, x + 11*s, y + 7*s);
+        Move(rp, x + 11*s, y + 1*s); Draw(rp, x + 5*s, y + 7*s);
+    }
+    if (icon == AMIWEATHER_ICON_PARTLY_CLOUDY ||
+        icon == AMIWEATHER_ICON_CLOUDY || icon == AMIWEATHER_ICON_FOG ||
+        icon == AMIWEATHER_ICON_DRIZZLE || icon == AMIWEATHER_ICON_RAIN ||
+        icon == AMIWEATHER_ICON_SHOWERS || icon == AMIWEATHER_ICON_SNOW ||
+        icon == AMIWEATHER_ICON_SNOW_SHOWERS ||
+        icon == AMIWEATHER_ICON_THUNDERSTORM || icon == AMIWEATHER_ICON_UNKNOWN) {
+        RectFill(rp, x + 3*s, y + 7*s, x + 18*s, y + 12*s);
+        RectFill(rp, x + 6*s, y + 5*s, x + 14*s, y + 8*s);
+        Move(rp, x + 3*s, y + 12*s); Draw(rp, x + 18*s, y + 12*s);
+    }
+    if (icon == AMIWEATHER_ICON_FOG) {
+        Move(rp, x + 1*s, y + 4*s); Draw(rp, x + 20*s, y + 4*s);
+        Move(rp, x + 1*s, y + 15*s); Draw(rp, x + 20*s, y + 15*s);
+    } else if (icon == AMIWEATHER_ICON_DRIZZLE || icon == AMIWEATHER_ICON_RAIN ||
+               icon == AMIWEATHER_ICON_SHOWERS) {
+        Move(rp, x + 6*s, y + 14*s); Draw(rp, x + 5*s, y + 17*s);
+        Move(rp, x + 11*s, y + 14*s); Draw(rp, x + 10*s, y + 17*s);
+        Move(rp, x + 16*s, y + 14*s); Draw(rp, x + 15*s, y + 17*s);
+    } else if (icon == AMIWEATHER_ICON_SNOW || icon == AMIWEATHER_ICON_SNOW_SHOWERS) {
+        Move(rp, x + 7*s, y + 14*s); Draw(rp, x + 7*s, y + 18*s);
+        Move(rp, x + 5*s, y + 16*s); Draw(rp, x + 9*s, y + 16*s);
+        Move(rp, x + 12*s, y + 14*s); Draw(rp, x + 12*s, y + 18*s);
+        Move(rp, x + 10*s, y + 16*s); Draw(rp, x + 14*s, y + 16*s);
+    } else if (icon == AMIWEATHER_ICON_THUNDERSTORM) {
+        Move(rp, x + 11*s, y + 13*s); Draw(rp, x + 8*s, y + 18*s);
+        Draw(rp, x + 12*s, y + 15*s); Draw(rp, x + 9*s, y + 15*s);
+    }
+}
+
+static void draw_line_at(struct RastPort *rp, const struct WindowLayout *layout,
+                         WORD row, WORD x, const char *text)
+{
+    WORD y = layout->content_top + row * layout->baseline_step;
+    draw_clipped(rp, x, y, text, layout->width - x - 10);
+}
+
 static void draw_line(struct RastPort *rp, const struct WindowLayout *layout,
                       WORD row, const char *text)
 {
@@ -242,9 +290,11 @@ static void draw_content(struct Window *window,
     }
 
     SetSoftStyle(rp, FSF_BOLD, supported_style);
-    draw_line(rp, layout, 2, line);
+    draw_line_at(rp, layout, 2, layout->left + 32, line);
+    draw_weather_icon(rp, layout->left, layout->content_top + 2 * layout->baseline_step - 12,
+                      amiweather_wmo_icon(application->report.current.weather_code), 1);
     SetSoftStyle(rp, FS_NORMAL, supported_style);
-    draw_line(rp, layout, 3,
+    draw_line_at(rp, layout, 3, layout->left + 32,
               amiweather_wmo_description(application->report.current.weather_code));
 
     {
@@ -306,7 +356,10 @@ static void draw_content(struct Window *window,
                 snprintf(line, sizeof(line), "%-6s %-18s %s / %s \260%s",
                          date, condition, minimum, maximum,
                          amiweather_temperature_unit_label(application->preferences.temperature_unit));
-            draw_line(rp, layout, (WORD)(9 + i), line);
+            draw_weather_icon(rp, layout->left,
+                              layout->content_top + (WORD)(9 + i) * layout->baseline_step - 10,
+                              amiweather_wmo_icon(day->weather_code), 1);
+            draw_line_at(rp, layout, (WORD)(9 + i), layout->left + 24, line);
         }
     }
     if (application->view == VIEW_LOADING)
@@ -885,6 +938,7 @@ int amiweather_gui_run(void)
     BOOL preferences_requested;
     BOOL hourly_requested;
     enum AmiWeatherPreferencesError preferences_load_result;
+    char window_title[32];
     int result = 20;
 
     memset(&application, 0, sizeof(application));
@@ -899,6 +953,7 @@ int amiweather_gui_run(void)
             application.preferences.default_location_index];
     else
         amiweather_location_default(&application.location);
+    snprintf(window_title, sizeof(window_title), "AmiWeather %s", AMIWEATHER_VERSION);
     IntuitionBase = (struct IntuitionBase *)OpenLibrary("intuition.library", 39);
     GadToolsBase = OpenLibrary("gadtools.library", 39);
     GfxBase = (struct GfxBase *)OpenLibrary("graphics.library", 39);
@@ -967,7 +1022,7 @@ int amiweather_gui_run(void)
         goto cleanup;
 
     window = OpenWindowTags(NULL,
-        WA_Title, (ULONG)"AmiWeather",
+        WA_Title, (ULONG)window_title,
         WA_CustomScreen, (ULONG)screen,
         WA_Width, (ULONG)layout.width,
         WA_Height, (ULONG)layout.height,

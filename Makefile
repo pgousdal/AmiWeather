@@ -27,7 +27,7 @@ else
 $(error Unknown PLATFORM '$(PLATFORM)'; use posix or amiga)
 endif
 
-.PHONY: all clean test smoke check-sdk
+.PHONY: all clean test smoke check-sdk release validate-release
 all: check-sdk $(PROGRAM)
 
 check-sdk:
@@ -67,6 +67,14 @@ ifeq ($(PLATFORM),posix)
 else
 	@echo "Run the Amiga executable on a configured AmigaOS system."
 endif
+
+release: PLATFORM := amiga
+release: all
+	sh scripts/make_release.sh
+	sh scripts/validate_release.sh
+
+validate-release:
+	sh scripts/validate_release.sh
 
 clean:
 	rm -rf build

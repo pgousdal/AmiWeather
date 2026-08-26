@@ -16,8 +16,11 @@
   Celsius/Fahrenheit plus km/h/mph preferences.
 - **M5 — Hourly Forecast (complete):** twelve bounded next-hour entries in the
   atomic current/daily report and a compact scrollable native hourly window.
-- **M6 — Visual Polish and Weather Icons:** improve restrained presentation and
-  add suitable classic-Amiga weather artwork without a dashboard redesign.
+- **M6 — Visual Polish, Weather Icons, and Aminet Packaging (complete):**
+  restrained compiled-in icons, improved hierarchy, version 0.1.0, MIT license,
+  and reproducible LHA packaging with executable/archive checksums.
+- **M7 — Release Hardening / Aminet 0.1.0:** final manual QA and upload
+  preparation; no further feature development is planned here.
 
 Each milestone should remain independently testable and avoid prematurely
 introducing background or elaborate UI infrastructure.

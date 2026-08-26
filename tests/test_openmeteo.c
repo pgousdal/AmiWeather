@@ -354,6 +354,23 @@ static void test_compact_descriptions(void)
     CHECK(strcmp(amiweather_wmo_compact_description(4), "Unknown") == 0);
 }
 
+static void test_wmo_icons(void)
+{
+    CHECK(amiweather_wmo_icon(0) == AMIWEATHER_ICON_CLEAR);
+    CHECK(amiweather_wmo_icon(1) == AMIWEATHER_ICON_PARTLY_CLOUDY);
+    CHECK(amiweather_wmo_icon(2) == AMIWEATHER_ICON_PARTLY_CLOUDY);
+    CHECK(amiweather_wmo_icon(3) == AMIWEATHER_ICON_CLOUDY);
+    CHECK(amiweather_wmo_icon(45) == AMIWEATHER_ICON_FOG);
+    CHECK(amiweather_wmo_icon(51) == AMIWEATHER_ICON_DRIZZLE);
+    CHECK(amiweather_wmo_icon(63) == AMIWEATHER_ICON_RAIN);
+    CHECK(amiweather_wmo_icon(81) == AMIWEATHER_ICON_SHOWERS);
+    CHECK(amiweather_wmo_icon(73) == AMIWEATHER_ICON_SNOW);
+    CHECK(amiweather_wmo_icon(85) == AMIWEATHER_ICON_SNOW_SHOWERS);
+    CHECK(amiweather_wmo_icon(95) == AMIWEATHER_ICON_THUNDERSTORM);
+    CHECK(amiweather_wmo_icon(4) == AMIWEATHER_ICON_UNKNOWN);
+    CHECK(amiweather_wmo_icon(100) == AMIWEATHER_ICON_UNKNOWN);
+}
+
 static struct AmiWeatherResult parse_hourly_object(
     const char *observation, const char *hourly, struct AmiWeatherReport *report)
 {
@@ -496,6 +513,7 @@ int main(void)
     test_report_commit_is_atomic();
     test_forecast_date_formatting();
     test_compact_descriptions();
+    test_wmo_icons();
     test_hourly_valid_selection_and_bound();
     test_hourly_fewer_optional_and_boundaries();
     test_hourly_errors();

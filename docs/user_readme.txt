@@ -1,0 +1,45 @@
+AmiWeather 0.1.0
+================
+
+AmiWeather is a native weather client for AmigaOS 3.x (68020 or newer). It
+shows current conditions, a five-day daily forecast, and the next twelve local
+forecast hours using Open-Meteo.
+
+Installation
+------------
+Copy AmiWeather to any drawer and run it from Workbench or Shell. It uses the
+public screen and standard Intuition/GadTools controls; no icon or tooltypes
+are required.
+
+The Amiga build requires a working bsdsocket.library-compatible TCP/IP stack,
+DNS access, and AmiSSL 5 for HTTPS. AmiTCP_NG is tested but not mandatory.
+
+Locations and preferences
+-------------------------
+Change... searches for a place. Locations can save up to eight places, use a
+saved place without geocoding, remove entries, and choose the startup default.
+Preferences selects Celsius/Fahrenheit and km/h/mph. Changes are fetched and
+saved before being applied.
+
+Configuration is stored as versioned text in ENV:AmiWeather/preferences and
+ENVARC:AmiWeather/preferences. ENV: is preferred at startup; ENVARC: is the
+persistent fallback. Missing files are normal first-run state.
+
+Weather views
+-------------
+Refresh updates current, daily, and hourly data synchronously. Hourly... opens
+a compact list of up to twelve local hours with a small native weather symbol,
+condition, temperature, and precipitation chance. Network requests can
+temporarily block the interface until AmiAPI's finite timeout expires. Window
+exposure and opening Hourly never make a network request.
+
+Troubleshooting
+---------------
+If weather cannot be fetched, verify DNS, the bsdsocket-compatible TCP/IP
+stack, and AmiSSL 5. A failed refresh keeps the last successful display and
+does not erase preferences.
+
+Credits
+-------
+Weather/geocoding: Open-Meteo. HTTP/API SDK: AmiAPI. HTTPS/TLS: AmiSSL 5.
+These projects are independent; no endorsement is implied.
