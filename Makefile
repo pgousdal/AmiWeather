@@ -31,7 +31,7 @@ else
 $(error Unknown PLATFORM '$(PLATFORM)'; use posix or amiga)
 endif
 
-.PHONY: all clean test door-test smoke check-sdk release validate-release
+.PHONY: all clean test door-test smoke check-sdk release validate-release door-release
 all: check-sdk $(PROGRAM) $(DOOR_PROGRAM)
 
 check-sdk:
@@ -94,6 +94,9 @@ release: all
 
 validate-release:
 	sh scripts/validate_release.sh
+
+door-release:
+	sh scripts/make_door_release.sh
 
 clean:
 	rm -rf build

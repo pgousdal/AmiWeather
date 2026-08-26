@@ -151,6 +151,10 @@ LHA archive with `jlha`, and the validation script tests/list-extracts it and
 verifies the executable hash.
 The archive is not uploaded automatically.
 
+Generate the standalone qualified door package with `make door-release` after
+the Amiga `AmiWeatherDoor` binary is present. This creates the LHA, external
+Aminet `.readme`, and local SHA-256 sidecar without rebuilding the executable.
+
 ## Contact
 
 Project contact: amiweather@ousdal.org

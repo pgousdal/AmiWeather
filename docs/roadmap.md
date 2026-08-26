@@ -38,6 +38,8 @@
   the next adapter only after ABBS experience.
 - **M9 — Native ARexx Interface:** future persistent application port named
   `AMIWEATHER` for status, refresh, location, and report automation.
+- **M8.4 — AmiWeatherDoor 0.1.0 Packaging:** standalone Aminet packaging for
+  the runtime-qualified ABBS door; upload remains an explicit manual step.
 
 Each milestone should remain independently testable and avoid prematurely
 introducing background or elaborate UI infrastructure.
