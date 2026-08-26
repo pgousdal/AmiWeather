@@ -11,8 +11,11 @@
 - **M3 — Daily Forecast Presentation (complete):** bounded five-day daily
   forecast, shared current-plus-daily request, defensive parallel-array parsing,
   and a restrained classic Amiga forecast table.
-- **M4 — Preferences and Saved Locations:** preferences, persistence, and
-  saved-location usability.
+- **M4 — Preferences and Saved Locations (complete):** versioned ENV:/ENVARC:
+  persistence, eight bounded saved locations, startup default selection, and
+  Celsius/Fahrenheit plus km/h/mph preferences.
+- **M5 — Hourly Forecast:** add a compact bounded hourly outlook without
+  background refresh or dashboard-style presentation.
 
 Each milestone should remain independently testable and avoid prematurely
 introducing background or elaborate UI infrastructure.

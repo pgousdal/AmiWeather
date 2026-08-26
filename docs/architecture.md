@@ -12,7 +12,8 @@ Intuition + GadTools UI
  bsdsocket + AmiSSL 5
 ```
 
-The GUI consumes an application-owned `AmiWeatherReport`, containing current
+The GUI consumes application-owned `AmiWeatherPreferences` and an
+`AmiWeatherReport`, containing current
 conditions and a fixed-capacity five-entry daily forecast, and a bounded
 `AmiWeatherLocation`, plus application-level result codes.
 Open-Meteo field names and AmiAPI JSON
@@ -25,7 +26,8 @@ builder, bounds the response to 64 KiB, applies a 20-second network timeout,
 checks for a 2xx HTTP status, and parses the response with AmiAPI's public JSON
 API. All acquired network objects unwind through one cleanup path.
 
-M3 stores an in-memory selected location, initially Oslo. Geocoding requests
+M4 stores an in-memory selected location, initially the configured default or
+Oslo. Geocoding requests
 up to eight English-labelled results and requires a nonempty name plus valid
 coordinates; region, country, country code, and timezone are optional. Weather
 uses the selected coordinates and returned timezone, or Open-Meteo's `auto`
@@ -46,7 +48,7 @@ AmiWeather domain values and application-level results. Launch,
 search, selection, and explicit Refresh actions call the synchronous adapter;
 repainting reads the
 stored state and never performs network I/O. A request can therefore block GUI
-interaction until completion or timeout in M3. Background execution remains a
+interaction until completion or timeout in M4. Background execution remains a
 later design question rather than premature infrastructure.
 
 ## Native UI direction
@@ -87,7 +89,44 @@ no-FPU policy. The bounded report is modest persistent application state;
 response JSON stays heap-owned by AmiAPI and no large forecast arrays are put
 on the stack. Resources are unchanged and still unwind in reverse order.
 
+M4 adds compact GadTools Locations and Preferences windows while keeping the
+weather and forecast primary. Locations supports Use, Add Current, Remove, and
+Default over eight fixed entries. Use performs no geocoding and retains the
+fetch-before-commit behavior. List mutations operate on a copy and commit in
+memory only after persistence succeeds. Duplicate identity is name, country
+code, timezone, and coordinates rounded to six decimals. Removing an item
+compacts the array and adjusts a later default index; removing the default
+chooses the first remaining entry, while an empty list falls back to Oslo.
+
+The Preferences window uses GadTools cycle gadgets for Celsius/Fahrenheit and
+km/h/mph. Open-Meteo receives both selected unit parameters in the same query,
+so current and daily temperatures share a unit. Changes use fetch-candidate,
+publish-preferences, then commit report and preferences. Any failure leaves the
+old display and settings coherent. Secondary actions remain buttons: a menu bar
+would add menu lifecycle and event scope without enough benefit to justify
+destabilizing the existing compact UI in M4.
+
+## Preference persistence
+
+The parser and explicit-path file I/O are platform-neutral project code; Amiga
+path policy remains in the native frontend. Version 1 is bounded line-oriented
+text, never raw struct data, and records units, optional default index, and
+pipe-delimited location fields with decimal coordinates. Lines are limited to
+511 bytes, files to 8 KiB, locations to eight, reserved delimiters are rejected,
+unknown keys are ignored, and parsing commits only after the whole file
+validates. Missing files are normal; malformed or unsupported files preserve
+usability and are not overwritten merely by launching.
+
+Startup prefers `ENV:AmiWeather/preferences`, then
+`ENVARC:AmiWeather/preferences`. Save creates missing AmiWeather drawers,
+publishes ENVARC first, and mirrors ENV. If the mirror fails it is removed,
+leaving ENVARC unambiguous on fallback. Each file is written to `.new`, flushed
+and closed, the prior target is moved to `.old`, and the new file is renamed
+into place. Publication failure attempts rollback; success removes the backup.
+This avoids exposing a partially written open file without assuming atomic
+rename-over-existing behavior on every classic Amiga filesystem.
+
 Geocoding text remains validated UTF-8. Classic Amiga fonts generally do not
-render Unicode and clipping is byte-oriented, so M3 documents imperfect
+render Unicode and clipping is byte-oriented, so M4 documents imperfect
 non-Latin display rather than adding a large conversion framework. Memory
 safety, coordinates, and request queries are unaffected.

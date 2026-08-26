@@ -2,6 +2,7 @@
 #define AMIWEATHER_WEATHER_H
 
 #include <stddef.h>
+#include <amiweather/preferences.h>
 
 #define AMIWEATHER_OBSERVATION_TIME_SIZE 32
 #define AMIWEATHER_FORECAST_DAYS 5
@@ -34,6 +35,8 @@ struct AmiWeatherForecast {
 struct AmiWeatherReport {
     struct AmiWeatherCurrent current;
     struct AmiWeatherForecast forecast;
+    enum AmiWeatherTemperatureUnit temperature_unit;
+    enum AmiWeatherWindUnit wind_unit;
 };
 
 enum AmiWeatherError {

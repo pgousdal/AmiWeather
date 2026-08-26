@@ -6,7 +6,7 @@ AMIAPI_LIB := $(AMIAPI_DIR)/build/libamiapi.a
 
 CFLAGS ?= -O2 -Wall -Wextra -pedantic
 CPPFLAGS += -Iinclude -I$(AMIAPI_INCLUDE)
-COMMON_SRC := src/weather.c src/openmeteo.c
+COMMON_SRC := src/weather.c src/preferences.c src/openmeteo.c
 COMMON_OBJ := $(patsubst src/%.c,$(BUILD)/%.o,$(COMMON_SRC))
 
 ifeq ($(PLATFORM),posix)
@@ -19,7 +19,7 @@ ifeq ($(origin CC),default)
 CC := m68k-amigaos-gcc
 endif
 CFLAGS += -m68020
-CPPFLAGS += -I/opt/amiga/AmiSSL/Developer/include
+CPPFLAGS += -I/opt/amiga/AmiSSL/Developer/include -DAMIWEATHER_AMIGA
 PROGRAM := $(BUILD)/AmiWeather
 PLATFORM_OBJ := $(BUILD)/main_amiga.o $(BUILD)/gui_amiga.o
 LDLIBS += -L/opt/amiga/AmiSSL/Developer/lib/AmigaOS3 -lamisslauto
@@ -49,11 +49,16 @@ test: check-sdk
 ifeq ($(PLATFORM),posix)
 	$(MAKE) $(BUILD)/test_openmeteo PLATFORM=posix AMIAPI_DIR="$(AMIAPI_DIR)"
 	$(BUILD)/test_openmeteo
+	$(MAKE) $(BUILD)/test_preferences PLATFORM=posix AMIAPI_DIR="$(AMIAPI_DIR)"
+	$(BUILD)/test_preferences
 else
 	@echo "Fixture tests run on the POSIX host: make PLATFORM=posix test"
 endif
 
 $(BUILD)/test_openmeteo: tests/test_openmeteo.c $(COMMON_OBJ) $(AMIAPI_LIB)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(COMMON_OBJ) $(AMIAPI_LIB) $(LDLIBS) -lm -o $@
+
+$(BUILD)/test_preferences: tests/test_preferences.c $(COMMON_OBJ) $(AMIAPI_LIB)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(COMMON_OBJ) $(AMIAPI_LIB) $(LDLIBS) -lm -o $@
 
 smoke: all

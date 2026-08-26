@@ -1,4 +1,5 @@
 #include <amiweather/openmeteo.h>
+#include <amiweather/preferences.h>
 
 #include <exec/types.h>
 #include <exec/libraries.h>
@@ -13,18 +14,34 @@
 #include <proto/intuition.h>
 #include <proto/gadtools.h>
 #include <proto/graphics.h>
+#include <proto/dos.h>
 
 #include <stdio.h>
 #include <string.h>
 
 #define GID_REFRESH 1
 #define GID_CHANGE 2
+#define GID_LOCATIONS 3
+#define GID_PREFERENCES 4
 #define GID_SEARCH_TEXT 10
 #define GID_SEARCH 11
 #define GID_RESULTS 12
 #define GID_USE 13
 #define GID_CANCEL 14
 #define SEARCH_TEXT_SIZE 80
+#define GID_SAVED_LIST 20
+#define GID_SAVED_USE 21
+#define GID_SAVED_ADD 22
+#define GID_SAVED_REMOVE 23
+#define GID_SAVED_DEFAULT 24
+#define GID_SAVED_CLOSE 25
+#define GID_PREF_TEMPERATURE 30
+#define GID_PREF_WIND 31
+#define GID_PREF_SAVE 32
+#define GID_PREF_CANCEL 33
+
+#define AMIWEATHER_ENV_PATH "ENV:AmiWeather/preferences"
+#define AMIWEATHER_ENVARC_PATH "ENVARC:AmiWeather/preferences"
 
 struct IntuitionBase *IntuitionBase;
 struct Library *GadToolsBase;
@@ -41,6 +58,7 @@ struct ApplicationState {
     struct AmiWeatherReport report;
     struct AmiWeatherResult result;
     struct AmiWeatherLocation location;
+    struct AmiWeatherPreferences preferences;
     BOOL has_report;
 };
 
@@ -55,6 +73,8 @@ struct WindowLayout {
     WORD gadget_width;
     WORD gadget_height;
     WORD change_left;
+    WORD locations_left;
+    WORD preferences_left;
 };
 
 static void calculate_layout(const struct Screen *screen,
@@ -69,7 +89,7 @@ static void calculate_layout(const struct Screen *screen,
     layout->left = screen->WBorLeft + 12;
     layout->content_top = screen->WBorTop + font_height + 10;
     layout->baseline_step = font_height + 4;
-    layout->gadget_width = 88;
+    layout->gadget_width = 76;
     layout->gadget_height = font_height + 10;
     desired_height = layout->content_top + 15 * layout->baseline_step +
                      layout->gadget_height + screen->WBorBottom + 10;
@@ -77,6 +97,8 @@ static void calculate_layout(const struct Screen *screen,
         ? desired_height : available_height;
     layout->gadget_left = layout->left;
     layout->change_left = layout->left + layout->gadget_width + 8;
+    layout->locations_left = layout->change_left + layout->gadget_width + 8;
+    layout->preferences_left = layout->locations_left + layout->gadget_width + 8;
     layout->gadget_top = layout->height - screen->WBorBottom -
                          layout->gadget_height - 6;
 }
@@ -212,7 +234,8 @@ static void draw_content(struct Window *window,
             sizeof(value),
             application->report.current.temperature_c
         );
-        snprintf(line, sizeof(line), "%s \260C", value);
+        snprintf(line, sizeof(line), "%s \260%s", value,
+                 amiweather_temperature_unit_label(application->preferences.temperature_unit));
     }
 
     SetSoftStyle(rp, FSF_BOLD, supported_style);
@@ -229,7 +252,8 @@ static void draw_content(struct Window *window,
             sizeof(value),
             application->report.current.apparent_temperature_c
         );
-        snprintf(line, sizeof(line), "Feels like %s \260C", value);
+        snprintf(line, sizeof(line), "Feels like %s \260%s", value,
+                 amiweather_temperature_unit_label(application->preferences.temperature_unit));
     }
     draw_line(rp, layout, 4, line);
 
@@ -249,7 +273,8 @@ static void draw_content(struct Window *window,
             sizeof(value),
             application->report.current.wind_speed_kmh
         );
-        snprintf(line, sizeof(line), "Wind %s km/h", value);
+        snprintf(line, sizeof(line), "Wind %s %s", value,
+                 amiweather_wind_unit_label(application->preferences.wind_unit));
     }
     draw_line(rp, layout, 6, line);
 
@@ -270,12 +295,14 @@ static void draw_content(struct Window *window,
             format_tenths(minimum, sizeof(minimum), day->temperature_min_c);
             format_tenths(maximum, sizeof(maximum), day->temperature_max_c);
             if (layout->width >= 460 && day->has_precipitation_probability)
-                snprintf(line, sizeof(line), "%-6s %-18s %3d%%  %s / %s \260C",
+                snprintf(line, sizeof(line), "%-6s %-18s %3d%%  %s / %s \260%s",
                          date, condition, day->precipitation_probability,
-                         minimum, maximum);
+                         minimum, maximum,
+                         amiweather_temperature_unit_label(application->preferences.temperature_unit));
             else
-                snprintf(line, sizeof(line), "%-6s %-18s %s / %s \260C",
-                         date, condition, minimum, maximum);
+                snprintf(line, sizeof(line), "%-6s %-18s %s / %s \260%s",
+                         date, condition, minimum, maximum,
+                         amiweather_temperature_unit_label(application->preferences.temperature_unit));
             draw_line(rp, layout, (WORD)(9 + i), line);
         }
     }
@@ -297,7 +324,9 @@ static void fetch_weather(struct Window *window,
 
     application->view = VIEW_LOADING;
     draw_content(window, layout, application);
-    result = amiweather_openmeteo_fetch_report(&application->location, &updated);
+    result = amiweather_openmeteo_fetch_report_units(
+        &application->location, application->preferences.temperature_unit,
+        application->preferences.wind_unit, &updated);
     application->result = result;
     if (result.error == AMIWEATHER_OK) {
         application->report = updated;
@@ -478,6 +507,255 @@ cleanup:
     return accepted;
 }
 
+static void ensure_preferences_directories(void)
+{
+    BPTR lock;
+    lock = CreateDir((CONST_STRPTR)"ENVARC:AmiWeather");
+    if (lock) UnLock(lock);
+    lock = CreateDir((CONST_STRPTR)"ENV:AmiWeather");
+    if (lock) UnLock(lock);
+}
+
+static enum AmiWeatherPreferencesError save_preferences(
+    struct AmiWeatherPreferences *preferences)
+{
+    enum AmiWeatherPreferencesError result;
+    ensure_preferences_directories();
+    result = amiweather_preferences_save_file(AMIWEATHER_ENVARC_PATH, preferences);
+    if (result != AMIWEATHER_PREFS_OK)
+        return result;
+    result = amiweather_preferences_save_file(AMIWEATHER_ENV_PATH, preferences);
+    if (result != AMIWEATHER_PREFS_OK)
+        DeleteFile((CONST_STRPTR)AMIWEATHER_ENV_PATH);
+    return AMIWEATHER_PREFS_OK;
+}
+
+static enum AmiWeatherPreferencesError load_preferences(
+    struct AmiWeatherPreferences *preferences)
+{
+    enum AmiWeatherPreferencesError env_result, archive_result;
+    env_result = amiweather_preferences_load_file(AMIWEATHER_ENV_PATH, preferences);
+    if (env_result == AMIWEATHER_PREFS_OK)
+        return env_result;
+    archive_result = amiweather_preferences_load_file(AMIWEATHER_ENVARC_PATH,
+                                                       preferences);
+    if (archive_result == AMIWEATHER_PREFS_OK)
+        return AMIWEATHER_PREFS_OK;
+    if (env_result == AMIWEATHER_PREFS_NOT_FOUND &&
+        archive_result == AMIWEATHER_PREFS_NOT_FOUND)
+        return AMIWEATHER_PREFS_NOT_FOUND;
+    return archive_result;
+}
+
+static void show_preferences_error(struct Window *parent, const char *title,
+                                   enum AmiWeatherPreferencesError error)
+{
+    struct EasyStruct request;
+    request.es_StructSize = sizeof(request);
+    request.es_Flags = 0;
+    request.es_Title = (STRPTR)title;
+    request.es_TextFormat = (STRPTR)amiweather_preferences_error_string(error);
+    request.es_GadgetFormat = (STRPTR)"OK";
+    EasyRequestArgs(parent, &request, NULL, NULL);
+}
+
+static BOOL preferences_window(struct Screen *screen, APTR visual_info,
+                               struct AmiWeatherPreferences *candidate)
+{
+    static STRPTR temperature_labels[] = { (STRPTR)"Celsius", (STRPTR)"Fahrenheit", NULL };
+    static STRPTR wind_labels[] = { (STRPTR)"km/h", (STRPTR)"mph", NULL };
+    struct Window *window = NULL;
+    struct Gadget *gadgets = NULL, *gadget;
+    struct NewGadget ng;
+    struct IntuiMessage *message;
+    WORD font_height = screen->Font ? screen->Font->ta_YSize : 8;
+    WORD width = screen->Width - 20 < 340 ? screen->Width - 20 : 340;
+    WORD height = screen->Height - 20 < 145 ? screen->Height - 20 : 145;
+    WORD top = screen->WBorTop + font_height + 10;
+    WORD button_height = font_height + 8;
+    BOOL running = TRUE, accepted = FALSE;
+    ULONG temperature = (ULONG)candidate->temperature_unit;
+    ULONG wind = (ULONG)candidate->wind_unit;
+
+    gadget = CreateContext(&gadgets);
+    if (!gadget) goto cleanup;
+#define PREF_GADGET(left, y, w, h, text, id) do { memset(&ng, 0, sizeof(ng)); \
+    ng.ng_LeftEdge=(left); ng.ng_TopEdge=(y); ng.ng_Width=(w); ng.ng_Height=(h); \
+    ng.ng_GadgetText=(CONST_STRPTR)(text); ng.ng_GadgetID=(id); \
+    ng.ng_VisualInfo=visual_info; ng.ng_TextAttr=screen->Font; } while (0)
+    PREF_GADGET(105, top, width - 120, button_height, "Temperature:", GID_PREF_TEMPERATURE);
+    gadget = CreateGadget(CYCLE_KIND, gadget, &ng, GTCY_Labels, (ULONG)temperature_labels,
+                          GTCY_Active, temperature, TAG_DONE);
+    if (!gadget) goto cleanup;
+    PREF_GADGET(105, top + button_height + 8, width - 120, button_height,
+                "Wind:", GID_PREF_WIND);
+    gadget = CreateGadget(CYCLE_KIND, gadget, &ng, GTCY_Labels, (ULONG)wind_labels,
+                          GTCY_Active, wind, TAG_DONE);
+    if (!gadget) goto cleanup;
+    PREF_GADGET(12, height - button_height - screen->WBorBottom - 5,
+                80, button_height, "_Save", GID_PREF_SAVE);
+    gadget = CreateGadget(BUTTON_KIND, gadget, &ng, GT_Underscore, (ULONG)'_', TAG_DONE);
+    if (!gadget) goto cleanup;
+    PREF_GADGET(100, height - button_height - screen->WBorBottom - 5,
+                80, button_height, "_Cancel", GID_PREF_CANCEL);
+    gadget = CreateGadget(BUTTON_KIND, gadget, &ng, GT_Underscore, (ULONG)'_', TAG_DONE);
+    if (!gadget) goto cleanup;
+#undef PREF_GADGET
+    window = OpenWindowTags(NULL, WA_Title, (ULONG)"AmiWeather Preferences",
+        WA_CustomScreen, (ULONG)screen, WA_Width, (ULONG)width, WA_Height, (ULONG)height,
+        WA_DragBar, TRUE, WA_DepthGadget, TRUE, WA_CloseGadget, TRUE, WA_Activate, TRUE,
+        WA_Gadgets, (ULONG)gadgets,
+        WA_IDCMP, IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_REFRESHWINDOW, TAG_DONE);
+    if (!window) goto cleanup;
+    GT_RefreshWindow(window, NULL);
+    while (running) {
+        Wait(1UL << window->UserPort->mp_SigBit);
+        while ((message = GT_GetIMsg(window->UserPort)) != NULL) {
+            ULONG class = message->Class;
+            UWORD code = message->Code;
+            UWORD id = class == IDCMP_GADGETUP
+                ? ((struct Gadget *)message->IAddress)->GadgetID : 0;
+            GT_ReplyIMsg(message);
+            if (class == IDCMP_CLOSEWINDOW || id == GID_PREF_CANCEL) running = FALSE;
+            else if (id == GID_PREF_TEMPERATURE) temperature = code;
+            else if (id == GID_PREF_WIND) wind = code;
+            else if (id == GID_PREF_SAVE) {
+                if (temperature <= AMIWEATHER_TEMPERATURE_FAHRENHEIT &&
+                    wind <= AMIWEATHER_WIND_MPH) {
+                    candidate->temperature_unit = (enum AmiWeatherTemperatureUnit)temperature;
+                    candidate->wind_unit = (enum AmiWeatherWindUnit)wind;
+                    accepted = TRUE; running = FALSE;
+                }
+            } else if (class == IDCMP_REFRESHWINDOW) {
+                GT_BeginRefresh(window); GT_EndRefresh(window, TRUE);
+            }
+        }
+    }
+cleanup:
+    if (window) CloseWindow(window);
+    if (gadgets) FreeGadgets(gadgets);
+    return accepted;
+}
+
+static void refresh_saved_labels(struct Gadget *list_gadget, struct Window *window,
+    struct List *labels, struct Node *nodes, char display[][AMIWEATHER_LOCATION_DISPLAY_SIZE],
+    const struct AmiWeatherPreferences *preferences)
+{
+    size_t i;
+    GT_SetGadgetAttrs(list_gadget, window, NULL, GTLV_Labels, (ULONG)~0, TAG_DONE);
+    initialize_list(labels);
+    for (i = 0; i < preferences->saved_location_count; ++i) {
+        amiweather_location_format(&preferences->saved_locations[i], display[i],
+                                   AMIWEATHER_LOCATION_DISPLAY_SIZE);
+        if (preferences->has_default_location && preferences->default_location_index == i)
+            strncat(display[i], " (default)",
+                    AMIWEATHER_LOCATION_DISPLAY_SIZE - strlen(display[i]) - 1);
+        memset(&nodes[i], 0, sizeof(nodes[i]));
+        nodes[i].ln_Name = display[i]; AddTail(labels, &nodes[i]);
+    }
+    GT_SetGadgetAttrs(list_gadget, window, NULL, GTLV_Labels, (ULONG)labels,
+                      preferences->saved_location_count ? GTLV_Selected : TAG_IGNORE,
+                      0, TAG_DONE);
+}
+
+static BOOL saved_locations_window(struct Screen *screen, APTR visual_info,
+    struct Window *parent, struct AmiWeatherPreferences *preferences,
+    const struct AmiWeatherLocation *current, struct AmiWeatherLocation *selected)
+{
+    struct Window *window = NULL;
+    struct Gadget *gadgets = NULL, *gadget, *list_gadget = NULL;
+    struct NewGadget ng;
+    struct List labels;
+    struct Node nodes[AMIWEATHER_MAX_SAVED_LOCATIONS];
+    char display[AMIWEATHER_MAX_SAVED_LOCATIONS][AMIWEATHER_LOCATION_DISPLAY_SIZE];
+    struct IntuiMessage *message;
+    WORD font_height = screen->Font ? screen->Font->ta_YSize : 8;
+    WORD width = screen->Width - 20 < 500 ? screen->Width - 20 : 500;
+    WORD height = screen->Height - 20 < 210 ? screen->Height - 20 : 210;
+    WORD top = screen->WBorTop + font_height + 10;
+    WORD button_height = font_height + 8;
+    LONG selected_index = preferences->saved_location_count ? 0 : -1;
+    BOOL running = TRUE, use_location = FALSE;
+    initialize_list(&labels);
+    gadget = CreateContext(&gadgets); if (!gadget) goto cleanup;
+#define SAVED_GADGET(left,y,w,h,text,id) do { memset(&ng,0,sizeof(ng)); \
+    ng.ng_LeftEdge=(left); ng.ng_TopEdge=(y); ng.ng_Width=(w); ng.ng_Height=(h); \
+    ng.ng_GadgetText=(CONST_STRPTR)(text); ng.ng_GadgetID=(id); \
+    ng.ng_VisualInfo=visual_info; ng.ng_TextAttr=screen->Font; } while(0)
+    SAVED_GADGET(12, top, width - 24, height - top - button_height - 18,
+                 NULL, GID_SAVED_LIST);
+    gadget = CreateGadget(LISTVIEW_KIND, gadget, &ng, GTLV_Labels, (ULONG)&labels,
+                          GTLV_ShowSelected, NULL, TAG_DONE);
+    if (!gadget) goto cleanup;
+    list_gadget = gadget;
+    SAVED_GADGET(8, height-button_height-screen->WBorBottom-5, 64, button_height,
+                 "_Use", GID_SAVED_USE);
+    gadget=CreateGadget(BUTTON_KIND,gadget,&ng,GT_Underscore,(ULONG)'_',TAG_DONE); if(!gadget)goto cleanup;
+    SAVED_GADGET(76, height-button_height-screen->WBorBottom-5, 92, button_height,
+                 "_Add Current", GID_SAVED_ADD);
+    gadget=CreateGadget(BUTTON_KIND,gadget,&ng,GT_Underscore,(ULONG)'_',TAG_DONE); if(!gadget)goto cleanup;
+    SAVED_GADGET(172, height-button_height-screen->WBorBottom-5, 72, button_height,
+                 "_Remove", GID_SAVED_REMOVE);
+    gadget=CreateGadget(BUTTON_KIND,gadget,&ng,GT_Underscore,(ULONG)'_',TAG_DONE); if(!gadget)goto cleanup;
+    SAVED_GADGET(248, height-button_height-screen->WBorBottom-5, 72, button_height,
+                 "_Default", GID_SAVED_DEFAULT);
+    gadget=CreateGadget(BUTTON_KIND,gadget,&ng,GT_Underscore,(ULONG)'_',TAG_DONE); if(!gadget)goto cleanup;
+    SAVED_GADGET(324, height-button_height-screen->WBorBottom-5, 64, button_height,
+                 "_Close", GID_SAVED_CLOSE);
+    gadget=CreateGadget(BUTTON_KIND,gadget,&ng,GT_Underscore,(ULONG)'_',TAG_DONE); if(!gadget)goto cleanup;
+#undef SAVED_GADGET
+    window=OpenWindowTags(NULL,WA_Title,(ULONG)"Saved locations",WA_CustomScreen,(ULONG)screen,
+        WA_Width,(ULONG)width,WA_Height,(ULONG)height,WA_DragBar,TRUE,WA_DepthGadget,TRUE,
+        WA_CloseGadget,TRUE,WA_Activate,TRUE,WA_Gadgets,(ULONG)gadgets,
+        WA_IDCMP,IDCMP_CLOSEWINDOW|IDCMP_GADGETUP|IDCMP_REFRESHWINDOW,TAG_DONE);
+    if(!window)goto cleanup;
+    refresh_saved_labels(list_gadget,window,&labels,nodes,display,preferences);
+    GT_RefreshWindow(window,NULL);
+    while(running){
+        Wait(1UL<<window->UserPort->mp_SigBit);
+        while((message=GT_GetIMsg(window->UserPort))!=NULL){
+            ULONG class=message->Class; UWORD code=message->Code;
+            UWORD id=class==IDCMP_GADGETUP?((struct Gadget*)message->IAddress)->GadgetID:0;
+            GT_ReplyIMsg(message);
+            if(class==IDCMP_CLOSEWINDOW||id==GID_SAVED_CLOSE)running=FALSE;
+            else if(id==GID_SAVED_LIST)selected_index=(LONG)code;
+            else if(id==GID_SAVED_USE&&selected_index>=0&&
+                    (size_t)selected_index<preferences->saved_location_count){
+                *selected=preferences->saved_locations[selected_index]; use_location=TRUE; running=FALSE;
+            } else if(id==GID_SAVED_ADD){
+                struct AmiWeatherPreferences changed=*preferences;
+                enum AmiWeatherPreferencesError error=amiweather_preferences_add_location(&changed,current);
+                if(error==AMIWEATHER_PREFS_OK)error=save_preferences(&changed);
+                if(error==AMIWEATHER_PREFS_OK){*preferences=changed;selected_index=(LONG)preferences->saved_location_count-1;
+                    refresh_saved_labels(list_gadget,window,&labels,nodes,display,preferences);}
+                else show_preferences_error(parent,"Save location",error);
+            } else if(id==GID_SAVED_REMOVE&&selected_index>=0&&
+                      (size_t)selected_index<preferences->saved_location_count){
+                struct AmiWeatherPreferences changed=*preferences;
+                enum AmiWeatherPreferencesError error=amiweather_preferences_remove_location(&changed,(size_t)selected_index);
+                if(error==AMIWEATHER_PREFS_OK)error=save_preferences(&changed);
+                if(error==AMIWEATHER_PREFS_OK){*preferences=changed;
+                    if((size_t)selected_index>=preferences->saved_location_count)--selected_index;
+                    refresh_saved_labels(list_gadget,window,&labels,nodes,display,preferences);}
+                else show_preferences_error(parent,"Remove location",error);
+            } else if(id==GID_SAVED_DEFAULT&&selected_index>=0&&
+                      (size_t)selected_index<preferences->saved_location_count){
+                struct AmiWeatherPreferences changed=*preferences;
+                enum AmiWeatherPreferencesError error;
+                amiweather_preferences_set_default(&changed,(size_t)selected_index);
+                error=save_preferences(&changed);
+                if(error==AMIWEATHER_PREFS_OK){*preferences=changed;
+                    refresh_saved_labels(list_gadget,window,&labels,nodes,display,preferences);}
+                else show_preferences_error(parent,"Default location",error);
+            } else if(class==IDCMP_REFRESHWINDOW){GT_BeginRefresh(window);GT_EndRefresh(window,TRUE);}
+        }
+    }
+cleanup:
+    if (window) CloseWindow(window);
+    if (gadgets) FreeGadgets(gadgets);
+    return use_location;
+}
+
 int amiweather_gui_run(void)
 {
     struct Screen *screen = NULL;
@@ -494,11 +772,23 @@ int amiweather_gui_run(void)
     BOOL running = TRUE;
     BOOL refresh_requested;
     BOOL change_requested;
+    BOOL locations_requested;
+    BOOL preferences_requested;
+    enum AmiWeatherPreferencesError preferences_load_result;
     int result = 20;
 
     memset(&application, 0, sizeof(application));
     application.view = VIEW_LOADING;
-    amiweather_location_default(&application.location);
+    amiweather_preferences_default(&application.preferences);
+    preferences_load_result = load_preferences(&application.preferences);
+    if (preferences_load_result != AMIWEATHER_PREFS_OK &&
+        preferences_load_result != AMIWEATHER_PREFS_NOT_FOUND)
+        amiweather_preferences_default(&application.preferences);
+    if (application.preferences.has_default_location)
+        application.location = application.preferences.saved_locations[
+            application.preferences.default_location_index];
+    else
+        amiweather_location_default(&application.location);
     IntuitionBase = (struct IntuitionBase *)OpenLibrary("intuition.library", 39);
     GadToolsBase = OpenLibrary("gadtools.library", 39);
     GfxBase = (struct GfxBase *)OpenLibrary("graphics.library", 39);
@@ -528,6 +818,22 @@ int amiweather_gui_run(void)
                           GT_Underscore, (ULONG)'_', TAG_DONE);
     if (!gadget)
         goto cleanup;
+    memset(&ng, 0, sizeof(ng));
+    ng.ng_LeftEdge = layout.locations_left; ng.ng_TopEdge = layout.gadget_top;
+    ng.ng_Width = layout.gadget_width; ng.ng_Height = layout.gadget_height;
+    ng.ng_GadgetText = (CONST_STRPTR)"_Locations"; ng.ng_GadgetID = GID_LOCATIONS;
+    ng.ng_VisualInfo = visual_info; ng.ng_TextAttr = screen->Font;
+    gadget = CreateGadget(BUTTON_KIND, gadget, &ng,
+                          GT_Underscore, (ULONG)'_', TAG_DONE);
+    if (!gadget) goto cleanup;
+    memset(&ng, 0, sizeof(ng));
+    ng.ng_LeftEdge = layout.preferences_left; ng.ng_TopEdge = layout.gadget_top;
+    ng.ng_Width = layout.gadget_width; ng.ng_Height = layout.gadget_height;
+    ng.ng_GadgetText = (CONST_STRPTR)"_Prefs..."; ng.ng_GadgetID = GID_PREFERENCES;
+    ng.ng_VisualInfo = visual_info; ng.ng_TextAttr = screen->Font;
+    gadget = CreateGadget(BUTTON_KIND, gadget, &ng,
+                          GT_Underscore, (ULONG)'_', TAG_DONE);
+    if (!gadget) goto cleanup;
     memset(&ng, 0, sizeof(ng));
     ng.ng_LeftEdge = layout.change_left;
     ng.ng_TopEdge = layout.gadget_top;
@@ -563,6 +869,9 @@ int amiweather_gui_run(void)
     GT_RefreshWindow(window, NULL);
     draw_content(window, &layout, &application);
     fetch_weather(window, &layout, &application);
+    if (preferences_load_result != AMIWEATHER_PREFS_OK &&
+        preferences_load_result != AMIWEATHER_PREFS_NOT_FOUND)
+        show_preferences_error(window, "Preferences ignored", preferences_load_result);
 
     while (running) {
         Wait(1UL << window->UserPort->mp_SigBit);
@@ -571,6 +880,8 @@ int amiweather_gui_run(void)
             code = message->Code;
             refresh_requested = FALSE;
             change_requested = FALSE;
+            locations_requested = FALSE;
+            preferences_requested = FALSE;
             if (class == IDCMP_CLOSEWINDOW)
                 running = FALSE;
             else if (class == IDCMP_GADGETUP &&
@@ -579,6 +890,12 @@ int amiweather_gui_run(void)
             else if (class == IDCMP_GADGETUP &&
                      ((struct Gadget *)message->IAddress)->GadgetID == GID_CHANGE)
                 change_requested = TRUE;
+            else if (class == IDCMP_GADGETUP &&
+                     ((struct Gadget *)message->IAddress)->GadgetID == GID_LOCATIONS)
+                locations_requested = TRUE;
+            else if (class == IDCMP_GADGETUP &&
+                     ((struct Gadget *)message->IAddress)->GadgetID == GID_PREFERENCES)
+                preferences_requested = TRUE;
             else if (class == IDCMP_VANILLAKEY && (code == 'r' || code == 'R'))
                 refresh_requested = TRUE;
             else if (class == IDCMP_REFRESHWINDOW) {
@@ -596,8 +913,9 @@ int amiweather_gui_run(void)
                     struct AmiWeatherResult fetch_result;
                     application.view = VIEW_LOADING;
                     draw_content(window, &layout, &application);
-                    fetch_result = amiweather_openmeteo_fetch_report(&candidate,
-                                                                     &updated);
+                    fetch_result = amiweather_openmeteo_fetch_report_units(
+                        &candidate, application.preferences.temperature_unit,
+                        application.preferences.wind_unit, &updated);
                     if (fetch_result.error == AMIWEATHER_OK) {
                         application.location = candidate;
                         application.report = updated;
@@ -607,6 +925,60 @@ int amiweather_gui_run(void)
                     } else {
                         application.view = VIEW_WEATHER;
                         show_result_requester(window, "Weather update", &fetch_result);
+                    }
+                    draw_content(window, &layout, &application);
+                }
+            }
+            if (locations_requested && running) {
+                struct AmiWeatherLocation candidate;
+                if (saved_locations_window(screen, visual_info, window,
+                        &application.preferences, &application.location, &candidate)) {
+                    struct AmiWeatherReport updated;
+                    struct AmiWeatherResult fetch_result;
+                    application.view = VIEW_LOADING;
+                    draw_content(window, &layout, &application);
+                    fetch_result = amiweather_openmeteo_fetch_report_units(
+                        &candidate, application.preferences.temperature_unit,
+                        application.preferences.wind_unit, &updated);
+                    if (fetch_result.error == AMIWEATHER_OK) {
+                        application.location = candidate;
+                        application.report = updated;
+                        application.result = fetch_result;
+                        application.has_report = TRUE;
+                        application.view = VIEW_WEATHER;
+                    } else {
+                        application.view = application.has_report ? VIEW_WEATHER : VIEW_ERROR;
+                        show_result_requester(window, "Weather update", &fetch_result);
+                    }
+                    draw_content(window, &layout, &application);
+                }
+            }
+            if (preferences_requested && running) {
+                struct AmiWeatherPreferences candidate_preferences = application.preferences;
+                if (preferences_window(screen, visual_info, &candidate_preferences)) {
+                    struct AmiWeatherReport updated;
+                    struct AmiWeatherResult fetch_result;
+                    enum AmiWeatherPreferencesError save_result;
+                    application.view = VIEW_LOADING;
+                    draw_content(window, &layout, &application);
+                    fetch_result = amiweather_openmeteo_fetch_report_units(
+                        &application.location, candidate_preferences.temperature_unit,
+                        candidate_preferences.wind_unit, &updated);
+                    if (fetch_result.error != AMIWEATHER_OK) {
+                        application.view = application.has_report ? VIEW_WEATHER : VIEW_ERROR;
+                        show_result_requester(window, "Unit update", &fetch_result);
+                    } else {
+                        save_result = save_preferences(&candidate_preferences);
+                        if (save_result != AMIWEATHER_PREFS_OK) {
+                            application.view = application.has_report ? VIEW_WEATHER : VIEW_ERROR;
+                            show_preferences_error(window, "Preferences not saved", save_result);
+                        } else {
+                            application.preferences = candidate_preferences;
+                            application.report = updated;
+                            application.result = fetch_result;
+                            application.has_report = TRUE;
+                            application.view = VIEW_WEATHER;
+                        }
                     }
                     draw_content(window, &layout, &application);
                 }

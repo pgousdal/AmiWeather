@@ -523,45 +523,103 @@ add_failed:
                        0, AmiAPI_ErrorString(error));
 }
 
-struct AmiWeatherResult amiweather_openmeteo_fetch_report(
-    const struct AmiWeatherLocation *location, struct AmiWeatherReport *report)
+static struct AmiAPIQuery *report_query(
+    const struct AmiWeatherLocation *location,
+    enum AmiWeatherTemperatureUnit temperature_unit,
+    enum AmiWeatherWindUnit wind_unit,
+    enum AmiAPIError *query_error)
 {
     struct AmiAPIQuery *query;
-    struct AmiWeatherResult result;
     enum AmiAPIError error;
     char latitude[24];
     char longitude[24];
     const char *timezone;
 
-    if (!location || !report || !location->name[0] ||
+    *query_error = AMIAPI_OK;
+    if (!location || !location->name[0] ||
+        (temperature_unit != AMIWEATHER_TEMPERATURE_CELSIUS &&
+         temperature_unit != AMIWEATHER_TEMPERATURE_FAHRENHEIT) ||
+        (wind_unit != AMIWEATHER_WIND_KMH && wind_unit != AMIWEATHER_WIND_MPH) ||
         location->latitude < -90.0 || location->latitude > 90.0 ||
         location->longitude < -180.0 || location->longitude > 180.0)
-        return result_make(AMIWEATHER_ERR_ARGUMENT, 0, "invalid location");
+        return NULL;
     format_coordinate(latitude, sizeof(latitude), location->latitude);
     format_coordinate(longitude, sizeof(longitude), location->longitude);
     timezone = location->timezone[0] ? location->timezone : "auto";
     query = AmiAPI_QueryCreate(AMIWEATHER_OPENMETEO_BASE_URL);
-    if (!query)
-        return result_make(AMIWEATHER_ERR_MEMORY, 0, "query allocation failed");
+    if (!query) { *query_error = AMIAPI_ERR_NO_MEMORY; return NULL; }
 #define ADD_REPORT(name, value) do { error = AmiAPI_QueryAdd(query, name, value); \
     if (error != AMIAPI_OK) goto report_add_failed; } while (0)
     ADD_REPORT("latitude", latitude);
     ADD_REPORT("longitude", longitude);
     ADD_REPORT("current", "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m");
     ADD_REPORT("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max");
-    ADD_REPORT("temperature_unit", "celsius");
-    ADD_REPORT("wind_speed_unit", "kmh");
+    ADD_REPORT("temperature_unit", amiweather_temperature_unit_query(temperature_unit));
+    ADD_REPORT("wind_speed_unit", amiweather_wind_unit_query(wind_unit));
     ADD_REPORT("timezone", timezone);
     ADD_REPORT("forecast_days", "5");
 #undef ADD_REPORT
+    return query;
+report_add_failed:
+    *query_error = error;
+    AmiAPI_QueryDestroy(query);
+    return NULL;
+}
+
+struct AmiWeatherResult amiweather_openmeteo_report_url(
+    const struct AmiWeatherLocation *location,
+    enum AmiWeatherTemperatureUnit temperature_unit,
+    enum AmiWeatherWindUnit wind_unit, char *buffer, size_t size)
+{
+    struct AmiAPIQuery *query;
+    enum AmiAPIError error;
+    const char *url;
+    if (!buffer || size == 0)
+        return result_make(AMIWEATHER_ERR_ARGUMENT, 0, "invalid URL buffer");
+    query = report_query(location, temperature_unit, wind_unit, &error);
+    if (!query)
+        return result_make(error == AMIAPI_ERR_NO_MEMORY ? AMIWEATHER_ERR_MEMORY
+                                                         : AMIWEATHER_ERR_ARGUMENT,
+                           0, "query construction failed");
+    url = AmiAPI_QueryURL(query);
+    if (!url || strlen(url) >= size) {
+        AmiAPI_QueryDestroy(query);
+        return result_make(AMIWEATHER_ERR_MEMORY, 0, "URL buffer too small");
+    }
+    memcpy(buffer, url, strlen(url) + 1);
+    AmiAPI_QueryDestroy(query);
+    return result_make(AMIWEATHER_OK, 0, NULL);
+}
+
+struct AmiWeatherResult amiweather_openmeteo_fetch_report_units(
+    const struct AmiWeatherLocation *location,
+    enum AmiWeatherTemperatureUnit temperature_unit,
+    enum AmiWeatherWindUnit wind_unit, struct AmiWeatherReport *report)
+{
+    struct AmiAPIQuery *query;
+    struct AmiWeatherResult result;
+    enum AmiAPIError error;
+    if (!report)
+        return result_make(AMIWEATHER_ERR_ARGUMENT, 0, "invalid report");
+    query = report_query(location, temperature_unit, wind_unit, &error);
+    if (!query)
+        return result_make(error == AMIAPI_ERR_NO_MEMORY ? AMIWEATHER_ERR_MEMORY
+                                                         : AMIWEATHER_ERR_ARGUMENT,
+                           0, "query construction failed");
     result = execute_query(query, NULL, report, NULL);
     AmiAPI_QueryDestroy(query);
+    if (result.error == AMIWEATHER_OK) {
+        report->temperature_unit = temperature_unit;
+        report->wind_unit = wind_unit;
+    }
     return result;
-report_add_failed:
-    AmiAPI_QueryDestroy(query);
-    return result_make(error == AMIAPI_ERR_NO_MEMORY ? AMIWEATHER_ERR_MEMORY
-                                                     : AMIWEATHER_ERR_NETWORK,
-                       0, AmiAPI_ErrorString(error));
+}
+
+struct AmiWeatherResult amiweather_openmeteo_fetch_report(
+    const struct AmiWeatherLocation *location, struct AmiWeatherReport *report)
+{
+    return amiweather_openmeteo_fetch_report_units(
+        location, AMIWEATHER_TEMPERATURE_CELSIUS, AMIWEATHER_WIND_KMH, report);
 }
 
 struct AmiWeatherResult amiweather_openmeteo_fetch_reference(

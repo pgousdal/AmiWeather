@@ -2,8 +2,8 @@
 
 AmiWeather is a native weather application for classic AmigaOS. The primary
 target is AmigaOS 3.x on a 68020 or newer processor; no FPU or MMU is required.
-The current M3 build remains version 0.0.1. It provides location search,
-current conditions, and a five-day forecast, while remaining an early build
+The current M4 build remains version 0.0.1. It provides persistent preferences,
+saved locations, current conditions, and a five-day forecast, while remaining an early build
 rather than a user-ready release.
 
 The Amiga interface uses Intuition and GadTools on the user's public screen.
@@ -32,15 +32,20 @@ make PLATFORM=amiga AMIAPI_DIR=../AmiAPI
 and `build/libamiapi.a` and gives a direct error if either is absent. It never
 copies or rebuilds AmiAPI.
 
-## Location search, current conditions, and forecast
+## Locations, preferences, and forecast
 
 The native application opens on the user's public screen and fetches current
-weather and forecast for Oslo at launch. **Change...** opens a compact native GadTools
+weather and forecast for the configured default, or Oslo on first run.
+**Change...** opens a compact native GadTools
 search window. It searches Open-Meteo's geocoding API, presents up to eight
 `place, region, country` matches, and fetches weather before committing a
 selection. A failed first fetch leaves the previous location, weather, and
-forecast intact. The selected location is retained in memory so Refresh uses it for the
-rest of the run; it is not yet persisted. It displays temperature, apparent
+forecast intact. **Locations** manages up to eight saved locations. The current
+location can be added without duplicating an existing match, and saved entries
+can be selected without another geocoding request, removed, or marked as the
+startup default. Removing the default selects the first remaining saved entry
+as default; removing the last saved entry restores the built-in Oslo startup
+fallback. It displays temperature, apparent
 temperature,
 relative humidity, wind speed, a human-readable condition derived from the WMO
 weather code, and observation time local to the selected location when its
@@ -52,20 +57,42 @@ data use one Open-Meteo request and are committed together. The GadTools
 shown without discarding the last successful display; Intuition exposure
 redraws only stored state and does not initiate network traffic.
 
-Requests are synchronous in M3. Search, a selection's initial weather fetch,
+The Preferences window selects Celsius or Fahrenheit and km/h or mph. Unit
+changes fetch a complete current-plus-daily report and persist the candidate
+preferences before changing displayed state. A failed fetch or save leaves the
+old units and report intact. Amiga decimal rendering remains integer-based.
+
+Requests are synchronous in M4. Search, a selection's initial weather fetch,
 launch, and Refresh can temporarily block GUI interaction until the request
 completes or AmiAPI's finite 20-second network
 timeout expires. Background/asynchronous requests may be evaluated later.
 
-The POSIX reference executable accepts an optional place query, selects the
+The POSIX reference executable accepts `--preferences PATH` followed by an
+optional place query. It never reads the developer's home directory. It selects the
 first result for smoke testing, and prints its current weather and forecast. It remains a
 development and live-smoke-test aid, not a second product.
 
 Geocoding strings are kept as validated UTF-8 in bounded domain buffers.
 Classic screen fonts are not Unicode-aware, so unavailable non-Latin glyphs
 may display incorrectly and clipping is byte-oriented. Coordinates and API
-queries are unaffected; M3 does not add a general Unicode conversion layer.
+queries are unaffected; M4 does not add a general Unicode conversion layer.
 
-Forecast storage is fixed at five application-owned entries. M3 has no hourly
-forecast, graphs, maps, custom icons, persistence, favourites, preferences,
-localization, or background refresh.
+## Preference file
+
+Classic Amiga builds read `ENV:AmiWeather/preferences` first and otherwise
+`ENVARC:AmiWeather/preferences`. Saving publishes the persistent ENVARC copy
+first and then mirrors ENV; a failed ENV mirror is removed so the next startup
+falls back to ENVARC. Missing files are normal first-run state. Malformed or
+unsupported files are not overwritten at launch; AmiWeather falls back safely.
+
+Format version 1 is bounded, line-oriented text with explicit `version`,
+`temperature`, `wind`, optional `default`, and repeated `location` records.
+Location fields retain name, region, country, country code, decimal coordinates,
+and timezone. Unknown keys are ignored for forward compatibility. Saving writes
+and closes a `.new` file, moves an existing file to `.old`, publishes the new
+file, rolls back on publication failure, and removes the backup after success.
+This is the safest portable strategy used because rename-over-existing behavior
+is not guaranteed across classic Amiga filesystems.
+
+Forecast storage is fixed at five application-owned entries. M4 has no hourly
+forecast, graphs, maps, custom icons, localization, or background refresh.

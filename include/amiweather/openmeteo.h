@@ -46,4 +46,18 @@ struct AmiWeatherResult amiweather_openmeteo_fetch_report(
     struct AmiWeatherReport *report
 );
 
+struct AmiWeatherResult amiweather_openmeteo_fetch_report_units(
+    const struct AmiWeatherLocation *location,
+    enum AmiWeatherTemperatureUnit temperature_unit,
+    enum AmiWeatherWindUnit wind_unit,
+    struct AmiWeatherReport *report
+);
+
+struct AmiWeatherResult amiweather_openmeteo_report_url(
+    const struct AmiWeatherLocation *location,
+    enum AmiWeatherTemperatureUnit temperature_unit,
+    enum AmiWeatherWindUnit wind_unit,
+    char *buffer, size_t size
+);
+
 #endif
