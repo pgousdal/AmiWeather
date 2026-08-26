@@ -1,34 +1,173 @@
+#include <amiweather/openmeteo.h>
+
 #include <exec/types.h>
 #include <exec/libraries.h>
 #include <intuition/intuition.h>
 #include <intuition/screens.h>
 #include <libraries/gadtools.h>
 #include <graphics/gfxbase.h>
+#include <graphics/text.h>
 
 #include <proto/exec.h>
 #include <proto/intuition.h>
 #include <proto/gadtools.h>
 #include <proto/graphics.h>
 
+#include <stdio.h>
 #include <string.h>
+
+#define GID_REFRESH 1
 
 struct IntuitionBase *IntuitionBase;
 struct Library *GadToolsBase;
 struct GfxBase *GfxBase;
 
-static void draw_content(struct Window *window)
+enum ViewState {
+    VIEW_LOADING = 0,
+    VIEW_WEATHER,
+    VIEW_ERROR
+};
+
+struct ApplicationState {
+    enum ViewState view;
+    struct AmiWeatherCurrent weather;
+    struct AmiWeatherResult result;
+};
+
+struct WindowLayout {
+    WORD width;
+    WORD height;
+    WORD left;
+    WORD content_top;
+    WORD baseline_step;
+    WORD gadget_left;
+    WORD gadget_top;
+    WORD gadget_width;
+    WORD gadget_height;
+};
+
+static void calculate_layout(const struct Screen *screen,
+                             struct WindowLayout *layout)
+{
+    WORD font_height = screen->Font ? screen->Font->ta_YSize : 8;
+    WORD available_width = screen->Width - 12;
+    WORD available_height = screen->Height - 12;
+    WORD desired_height;
+
+    layout->width = available_width < 400 ? available_width : 400;
+    layout->left = screen->WBorLeft + 12;
+    layout->content_top = screen->WBorTop + font_height + 10;
+    layout->baseline_step = font_height + 4;
+    layout->gadget_width = 88;
+    layout->gadget_height = font_height + 10;
+    desired_height = layout->content_top + 9 * layout->baseline_step +
+                     layout->gadget_height + screen->WBorBottom + 10;
+    layout->height = desired_height < available_height
+        ? desired_height : available_height;
+    layout->gadget_left = layout->left;
+    layout->gadget_top = layout->height - screen->WBorBottom -
+                         layout->gadget_height - 6;
+}
+
+static void draw_clipped(struct RastPort *rp, WORD x, WORD y,
+                         const char *text, WORD max_width)
+{
+    size_t length = strlen(text);
+
+    while (length > 0 && TextLength(rp, (STRPTR)text, (ULONG)length) > max_width)
+        --length;
+    if (length > 0) {
+        Move(rp, x, y);
+        Text(rp, (STRPTR)text, (ULONG)length);
+    }
+}
+
+static void draw_line(struct RastPort *rp, const struct WindowLayout *layout,
+                      WORD row, const char *text)
+{
+    WORD y = layout->content_top + row * layout->baseline_step;
+    draw_clipped(rp, layout->left, y, text,
+                 layout->width - layout->left - 10);
+}
+
+static const char *visible_error_detail(const struct AmiWeatherResult *result)
+{
+    if ((result->error == AMIWEATHER_ERR_NETWORK ||
+         result->error == AMIWEATHER_ERR_HTTP_STATUS) &&
+        result->diagnostic[0])
+        return result->diagnostic;
+    return amiweather_error_string(result->error);
+}
+
+static void draw_content(struct Window *window,
+                         const struct WindowLayout *layout,
+                         const struct ApplicationState *application)
 {
     struct RastPort *rp = window->RPort;
-    WORD left = window->BorderLeft + 12;
-    WORD top = window->BorderTop + rp->TxHeight + 10;
+    char line[96];
+    ULONG supported_style;
+    WORD content_bottom = layout->gadget_top - 5;
 
+    SetAPen(rp, window->WScreen->BlockPen);
+    RectFill(rp, window->BorderLeft, window->BorderTop,
+             window->Width - window->BorderRight - 1, content_bottom);
     SetAPen(rp, window->WScreen->DetailPen);
-    Move(rp, left, top);
-    Text(rp, "AmiWeather", 10);
-    Move(rp, left, top + rp->TxHeight + 8);
-    Text(rp, "Native weather client for AmigaOS", 33);
-    Move(rp, left, top + (rp->TxHeight + 8) * 2);
-    Text(rp, "M0 foundation", 13);
+
+    supported_style = AskSoftStyle(rp);
+    SetSoftStyle(rp, FSF_BOLD, supported_style);
+    draw_line(rp, layout, 0, "Oslo");
+    SetSoftStyle(rp, FS_NORMAL, supported_style);
+
+    if (application->view == VIEW_LOADING) {
+        draw_line(rp, layout, 2, "Fetching weather...");
+        return;
+    }
+    if (application->view == VIEW_ERROR) {
+        draw_line(rp, layout, 2, "Unable to update weather");
+        draw_line(rp, layout, 4, visible_error_detail(&application->result));
+        return;
+    }
+
+    snprintf(line, sizeof(line), "%.1f \260C",
+             application->weather.temperature_c);
+    SetSoftStyle(rp, FSF_BOLD, supported_style);
+    draw_line(rp, layout, 2, line);
+    SetSoftStyle(rp, FS_NORMAL, supported_style);
+    draw_line(rp, layout, 3,
+              amiweather_wmo_description(application->weather.weather_code));
+
+    snprintf(line, sizeof(line), "Feels like %.1f \260C",
+             application->weather.apparent_temperature_c);
+    draw_line(rp, layout, 5, line);
+    snprintf(line, sizeof(line), "Humidity %.0f%%",
+             application->weather.relative_humidity_percent);
+    draw_line(rp, layout, 6, line);
+    snprintf(line, sizeof(line), "Wind %.1f km/h",
+             application->weather.wind_speed_kmh);
+    draw_line(rp, layout, 7, line);
+    snprintf(line, sizeof(line), "Observed %s UTC",
+             application->weather.observation_time);
+    draw_line(rp, layout, 8, line);
+}
+
+static void fetch_weather(struct Window *window,
+                          const struct WindowLayout *layout,
+                          struct ApplicationState *application)
+{
+    struct AmiWeatherCurrent updated;
+    struct AmiWeatherResult result;
+
+    application->view = VIEW_LOADING;
+    draw_content(window, layout, application);
+    result = amiweather_openmeteo_fetch_reference(&updated);
+    application->result = result;
+    if (result.error == AMIWEATHER_OK) {
+        application->weather = updated;
+        application->view = VIEW_WEATHER;
+    } else {
+        application->view = VIEW_ERROR;
+    }
+    draw_content(window, layout, application);
 }
 
 int amiweather_gui_run(void)
@@ -38,14 +177,18 @@ int amiweather_gui_run(void)
     struct Gadget *gadgets = NULL;
     struct Gadget *gadget;
     struct NewGadget ng;
+    struct WindowLayout layout;
+    struct ApplicationState application;
     APTR visual_info = NULL;
     struct IntuiMessage *message;
     ULONG class;
+    UWORD code;
     BOOL running = TRUE;
-    WORD width;
-    WORD height;
+    BOOL refresh_requested;
     int result = 20;
 
+    memset(&application, 0, sizeof(application));
+    application.view = VIEW_LOADING;
     IntuitionBase = (struct IntuitionBase *)OpenLibrary("intuition.library", 39);
     GadToolsBase = OpenLibrary("gadtools.library", 39);
     GfxBase = (struct GfxBase *)OpenLibrary("graphics.library", 39);
@@ -57,61 +200,68 @@ int amiweather_gui_run(void)
     visual_info = GetVisualInfo(screen, TAG_DONE);
     if (!visual_info)
         goto cleanup;
+    calculate_layout(screen, &layout);
 
-    width = screen->Width > 410 ? 400 : screen->Width - 12;
-    height = screen->Height > 180 ? 150 : screen->Height - 12;
     gadget = CreateContext(&gadgets);
     if (!gadget)
         goto cleanup;
     memset(&ng, 0, sizeof(ng));
-    ng.ng_LeftEdge = width - 90;
-    ng.ng_TopEdge = height - screen->WBorBottom - 28;
-    ng.ng_Width = 72;
-    ng.ng_Height = 18;
-    ng.ng_GadgetText = (CONST_STRPTR)"Close";
-    ng.ng_GadgetID = 1;
+    ng.ng_LeftEdge = layout.gadget_left;
+    ng.ng_TopEdge = layout.gadget_top;
+    ng.ng_Width = layout.gadget_width;
+    ng.ng_Height = layout.gadget_height;
+    ng.ng_GadgetText = (CONST_STRPTR)"_Refresh";
+    ng.ng_GadgetID = GID_REFRESH;
     ng.ng_VisualInfo = visual_info;
     ng.ng_TextAttr = screen->Font;
-    gadget = CreateGadget(BUTTON_KIND, gadget, &ng, TAG_DONE);
+    gadget = CreateGadget(BUTTON_KIND, gadget, &ng,
+                          GT_Underscore, (ULONG)'_', TAG_DONE);
     if (!gadget)
         goto cleanup;
 
     window = OpenWindowTags(NULL,
         WA_Title, (ULONG)"AmiWeather",
         WA_CustomScreen, (ULONG)screen,
-        WA_Width, (ULONG)width,
-        WA_Height, (ULONG)height,
-        WA_MinWidth, 300UL,
-        WA_MinHeight, 120UL,
-        WA_MaxWidth, (ULONG)screen->Width,
-        WA_MaxHeight, (ULONG)screen->Height,
+        WA_Width, (ULONG)layout.width,
+        WA_Height, (ULONG)layout.height,
         WA_DragBar, TRUE,
         WA_DepthGadget, TRUE,
         WA_CloseGadget, TRUE,
-        WA_SizeGadget, TRUE,
         WA_Activate, TRUE,
         WA_Gadgets, (ULONG)gadgets,
-        WA_IDCMP, IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_REFRESHWINDOW,
+        WA_IDCMP, IDCMP_CLOSEWINDOW | IDCMP_GADGETUP |
+                  IDCMP_REFRESHWINDOW | IDCMP_VANILLAKEY,
         TAG_DONE);
     if (!window)
         goto cleanup;
 
+    layout.left = window->BorderLeft + 12;
+    layout.content_top = window->BorderTop + window->RPort->TxHeight + 6;
     GT_RefreshWindow(window, NULL);
-    draw_content(window);
+    draw_content(window, &layout, &application);
+    fetch_weather(window, &layout, &application);
+
     while (running) {
         Wait(1UL << window->UserPort->mp_SigBit);
         while ((message = GT_GetIMsg(window->UserPort)) != NULL) {
             class = message->Class;
-            if (class == IDCMP_CLOSEWINDOW ||
-                (class == IDCMP_GADGETUP &&
-                 ((struct Gadget *)message->IAddress)->GadgetID == 1))
+            code = message->Code;
+            refresh_requested = FALSE;
+            if (class == IDCMP_CLOSEWINDOW)
                 running = FALSE;
+            else if (class == IDCMP_GADGETUP &&
+                     ((struct Gadget *)message->IAddress)->GadgetID == GID_REFRESH)
+                refresh_requested = TRUE;
+            else if (class == IDCMP_VANILLAKEY && (code == 'r' || code == 'R'))
+                refresh_requested = TRUE;
             else if (class == IDCMP_REFRESHWINDOW) {
                 GT_BeginRefresh(window);
-                draw_content(window);
+                draw_content(window, &layout, &application);
                 GT_EndRefresh(window, TRUE);
             }
             GT_ReplyIMsg(message);
+            if (refresh_requested && running)
+                fetch_weather(window, &layout, &application);
         }
     }
     result = 0;

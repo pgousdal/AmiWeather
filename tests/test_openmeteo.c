@@ -10,6 +10,40 @@ static int failures;
     fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #expr); \
     ++failures; } } while (0)
 
+struct WmoExpectation {
+    long code;
+    const char *description;
+};
+
+static void test_wmo_descriptions(void)
+{
+    static const struct WmoExpectation documented[] = {
+        { 0, "Clear sky" }, { 1, "Mainly clear" },
+        { 2, "Partly cloudy" }, { 3, "Overcast" },
+        { 45, "Fog" }, { 48, "Rime fog" },
+        { 51, "Light drizzle" }, { 53, "Drizzle" },
+        { 55, "Heavy drizzle" }, { 56, "Light freezing drizzle" },
+        { 57, "Freezing drizzle" }, { 61, "Light rain" },
+        { 63, "Rain" }, { 65, "Heavy rain" },
+        { 66, "Light freezing rain" }, { 67, "Freezing rain" },
+        { 71, "Light snow" }, { 73, "Snow" },
+        { 75, "Heavy snow" }, { 77, "Snow grains" },
+        { 80, "Light rain showers" }, { 81, "Rain showers" },
+        { 82, "Heavy rain showers" }, { 85, "Light snow showers" },
+        { 86, "Snow showers" }, { 95, "Thunderstorm" },
+        { 96, "Thunderstorm, light hail" },
+        { 99, "Thunderstorm with hail" }
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(documented) / sizeof(documented[0]); ++i)
+        CHECK(strcmp(amiweather_wmo_description(documented[i].code),
+                     documented[i].description) == 0);
+    CHECK(strcmp(amiweather_wmo_description(4), "Unknown") == 0);
+    CHECK(strcmp(amiweather_wmo_description(-1), "Unknown") == 0);
+    CHECK(strcmp(amiweather_wmo_description(100), "Unknown") == 0);
+}
+
 static void test_valid(void)
 {
     static const char fixture[] =
@@ -66,6 +100,7 @@ static void test_invalid(void)
 
 int main(void)
 {
+    test_wmo_descriptions();
     test_valid();
     test_missing();
     test_malformed();
@@ -74,6 +109,6 @@ int main(void)
         fprintf(stderr, "%d test(s) failed\n", failures);
         return 1;
     }
-    puts("Open-Meteo fixture tests passed");
+    puts("AmiWeather deterministic tests passed");
     return 0;
 }

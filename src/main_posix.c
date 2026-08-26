@@ -15,7 +15,9 @@ int main(void)
     printf("Feels like: %.1f C\n", weather.apparent_temperature_c);
     printf("Humidity: %.0f %%\n", weather.relative_humidity_percent);
     printf("Wind: %.1f km/h\n", weather.wind_speed_kmh);
-    printf("Weather code: %ld\n", weather.weather_code);
+    printf("Condition: %s (WMO %ld)\n",
+           amiweather_wmo_description(weather.weather_code),
+           weather.weather_code);
     printf("Observation: %s UTC\n", weather.observation_time);
     return 0;
 }

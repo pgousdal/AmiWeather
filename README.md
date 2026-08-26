@@ -2,9 +2,9 @@
 
 AmiWeather is a native weather application for classic AmigaOS. The primary
 target is AmigaOS 3.x on a 68020 or newer processor; no FPU or MMU is required.
-M0 is version 0.0.1 and establishes the project architecture, a real
-Open-Meteo client, deterministic parsing tests, a small POSIX reference
-program, and a native GUI shell. It is not a user-ready release.
+The current M1 build remains version 0.0.1. It provides current conditions for
+the fixed reference location Oslo, Norway, while remaining an early build
+rather than a user-ready release.
 
 The Amiga interface uses Intuition and GadTools on the user's public screen.
 It has **no MUI, ReAction, SDL, Qt, GTK, or portable GUI-toolkit dependency**.
@@ -32,14 +32,23 @@ make PLATFORM=amiga AMIAPI_DIR=../AmiAPI
 and `build/libamiapi.a` and gives a direct error if either is absent. It never
 copies or rebuilds AmiAPI.
 
-## M0 behaviour and limitations
+## Current conditions
 
-The POSIX reference executable requests current conditions for the documented
-demo location, Oslo, Norway, and prints temperature, apparent temperature,
-humidity, wind speed, WMO weather code, and observation time. It is a
-development aid, not a second product. The native M0 executable is deliberately
-a small Workbench/public-screen GUI shell; live networking is not yet performed
-inside its synchronous Intuition event loop.
+The native application opens on the user's public screen and fetches current
+weather for Oslo at launch. It displays temperature, apparent temperature,
+relative humidity, wind speed, a human-readable condition derived from the WMO
+weather code, and the UTC observation time. The GadTools **Refresh** button (or
+the `R` key) requests a new observation. Loading and network/error states are
+shown in the window; Intuition exposure redraws only the stored state and does
+not initiate network traffic.
 
-M0 has no location search, forecast presentation, icons, persistence,
-preferences, localization, background refresh, or asynchronous networking.
+Requests are synchronous in M1. Launch and Refresh can temporarily block GUI
+interaction until the request completes or AmiAPI's finite 20-second network
+timeout expires. Background/asynchronous requests may be evaluated later.
+
+The POSIX reference executable exercises the same domain and Open-Meteo code
+and prints the condition description together with the WMO code. It remains a
+development and live-smoke-test aid, not a second product.
+
+M1 has no geocoding or location selection, forecasts, weather icons,
+persistence, preferences, localization, or background refresh.

@@ -32,5 +32,6 @@ struct AmiWeatherResult {
 };
 
 const char *amiweather_error_string(enum AmiWeatherError error);
+const char *amiweather_wmo_description(long weather_code);
 
 #endif
