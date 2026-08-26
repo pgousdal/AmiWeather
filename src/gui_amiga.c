@@ -99,6 +99,59 @@ static const char *visible_error_detail(const struct AmiWeatherResult *result)
     return amiweather_error_string(result->error);
 }
 
+/*
+ * Avoid printf-family floating-point formatting on classic AmigaOS.
+ * Keep the weather domain values as doubles, but convert display values
+ * to integer tenths and format them with integer conversions only.
+ */
+static void format_tenths(
+    char *buffer,
+    size_t buffer_size,
+    double value)
+{
+    long tenths;
+    unsigned long magnitude;
+    unsigned long whole;
+    unsigned long fraction;
+
+    if (!buffer || buffer_size == 0)
+        return;
+
+    /*
+     * Round to the nearest tenth without requiring libm.
+     */
+    if (value >= 0.0)
+        tenths = (long)(value * 10.0 + 0.5);
+    else
+        tenths = (long)(value * 10.0 - 0.5);
+
+    if (tenths < 0)
+        magnitude = (unsigned long)(-(tenths + 1L)) + 1UL;
+    else
+        magnitude = (unsigned long)tenths;
+
+    whole = magnitude / 10UL;
+    fraction = magnitude % 10UL;
+
+    if (tenths < 0) {
+        snprintf(
+            buffer,
+            buffer_size,
+            "-%lu.%lu",
+            whole,
+            fraction
+        );
+    } else {
+        snprintf(
+            buffer,
+            buffer_size,
+            "%lu.%lu",
+            whole,
+            fraction
+        );
+    }
+}
+
 static void draw_content(struct Window *window,
                          const struct WindowLayout *layout,
                          const struct ApplicationState *application)
@@ -108,9 +161,19 @@ static void draw_content(struct Window *window,
     ULONG supported_style;
     WORD content_bottom = layout->gadget_top - 5;
 
+    /*
+     * Do not rely on the RastPort drawing state left behind by
+     * Intuition or GadTools.  In particular, JAM2 would paint the
+     * text background with BPen, which can make the foreground text
+     * disappear into the content background on classic Workbench
+     * palettes.
+     */
+    SetDrMd(rp, JAM1);
+
     SetAPen(rp, window->WScreen->BlockPen);
     RectFill(rp, window->BorderLeft, window->BorderTop,
              window->Width - window->BorderRight - 1, content_bottom);
+
     SetAPen(rp, window->WScreen->DetailPen);
 
     supported_style = AskSoftStyle(rp);
@@ -128,22 +191,53 @@ static void draw_content(struct Window *window,
         return;
     }
 
-    snprintf(line, sizeof(line), "%.1f \260C",
-             application->weather.temperature_c);
+    {
+        char value[32];
+
+        format_tenths(
+            value,
+            sizeof(value),
+            application->weather.temperature_c
+        );
+        snprintf(line, sizeof(line), "%s \260C", value);
+    }
+
     SetSoftStyle(rp, FSF_BOLD, supported_style);
     draw_line(rp, layout, 2, line);
     SetSoftStyle(rp, FS_NORMAL, supported_style);
     draw_line(rp, layout, 3,
               amiweather_wmo_description(application->weather.weather_code));
 
-    snprintf(line, sizeof(line), "Feels like %.1f \260C",
-             application->weather.apparent_temperature_c);
+    {
+        char value[32];
+
+        format_tenths(
+            value,
+            sizeof(value),
+            application->weather.apparent_temperature_c
+        );
+        snprintf(line, sizeof(line), "Feels like %s \260C", value);
+    }
     draw_line(rp, layout, 5, line);
-    snprintf(line, sizeof(line), "Humidity %.0f%%",
-             application->weather.relative_humidity_percent);
+
+    snprintf(
+        line,
+        sizeof(line),
+        "Humidity %ld%%",
+        (long)(application->weather.relative_humidity_percent + 0.5)
+    );
     draw_line(rp, layout, 6, line);
-    snprintf(line, sizeof(line), "Wind %.1f km/h",
-             application->weather.wind_speed_kmh);
+
+    {
+        char value[32];
+
+        format_tenths(
+            value,
+            sizeof(value),
+            application->weather.wind_speed_kmh
+        );
+        snprintf(line, sizeof(line), "Wind %s km/h", value);
+    }
     draw_line(rp, layout, 7, line);
     snprintf(line, sizeof(line), "Observed %s UTC",
              application->weather.observation_time);
