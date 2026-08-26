@@ -40,7 +40,6 @@ int amiweather_door_render_home(const struct AmiWeatherDoorTerminal *terminal,
              report->current.has_wind_direction ? amiweather_wind_direction(report->current.wind_direction_degrees) : "");
     amiweather_door_write(terminal, line);
     amiweather_door_render_daily(terminal, report, AMIWEATHER_FORECAST_DAYS);
-    amiweather_door_write(terminal, "\n[H] Hourly  [D] Daily  [7] 7 day  [A] 14 day  [W] Details\n[L] Location  [R] Refresh  [Q] Return to BBS\n");
     return 1;
 }
 

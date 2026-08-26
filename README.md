@@ -7,10 +7,11 @@ saved locations, current conditions, five daily rows, and a twelve-entry hourly
 forecast, while remaining an early build
 and a native 12-entry hourly forecast.
 
-M8.0 adds the foundation of a separate `AmiWeatherDoor` terminal program.
-It shares the weather/domain and Open-Meteo core with the GUI and provides a
-plain-text, host-testable presentation layer. ABBS 3.3 invocation is not yet
-implemented; no undocumented BBS ABI is assumed.
+M8.0/M8.2 add a separate `AmiWeatherDoor` terminal program. It shares the
+weather/domain and Open-Meteo core with the GUI and provides a plain-text,
+host-testable presentation layer. The documented ABBS 3.3 Shell-door launcher
+uses no command-line context and fails closed through `EndCLI`; the interactive
+door is runtime-qualified on ABBS 3.3.
 
 The Amiga interface uses Intuition and GadTools on the user's public screen.
 It has **no MUI, ReAction, SDL, Qt, GTK, or portable GUI-toolkit dependency**.
@@ -39,17 +40,16 @@ make PLATFORM=amiga AMIAPI_DIR=../AmiAPI
 ```
 
 The Amiga build produces both `build/amiga/AmiWeather` and
-`build/amiga/AmiWeatherDoor`. The door uses no Intuition or GadTools and is
-intended for a documented BBS adapter in M8.1.
+`build/amiga/AmiWeatherDoor`. The door uses no Intuition or GadTools.
 
 ## ABBS 3.3 door integration
 
 `contrib/abbs/` contains an ABBS 3.3 Shell-door script and example
 Node0Config/Node0Menu entries. Copy `AmiWeatherDoor` and the script to a fixed
 ABBS drawer, add the `S` configuration entry, and use `OPEN n` from ABBS. The
-script obtains the documented `FullName` and `NodeNr` values with `C:get`,
-passes bounded context arguments, and always runs `EndCLI`. Runtime ABBS
-qualification remains an M8.2 task.
+launcher passes no user-controlled arguments and always runs `EndCLI`.
+The door provides the runtime-qualified interactive H/D/7/A/W/L/R/Q weather
+session on ABBS 3.3. No AmiExpress support is claimed.
 
 `AMIAPI_DIR` defaults to `../AmiAPI`. The build checks for its public headers
 and `build/libamiapi.a` and gives a direct error if either is absent. It never

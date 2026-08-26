@@ -28,12 +28,16 @@
 - **M8.0 — BBS Door Foundation (complete):** separate AmiWeatherDoor target,
   shared weather core, bounded ASCII terminal presentation, and a documented
   adapter boundary without guessed BBS ABI details.
-- **M8.1 — ABBS 3.3 Integration (complete):** documented Shell-door launcher,
-  bounded FullName/NodeNr context, fixed example configuration, and EndCLI
-  cleanup. Runtime qualification remains deferred.
-- **M8.2 — ABBS Runtime Qualification:** qualify the integrated door on ABBS.
+- **M8.1 — ABBS 3.3 Integration (complete):** documented no-argument
+  Shell-door launcher, fixed example configuration, and fail-closed EndCLI
+  cleanup.
+- **M8.2 — ABBS Runtime Qualification (complete):** interactive current,
+  forecast, location, refresh, cancellation, and clean-return behavior
+  qualified on ABBS 3.3 / AmigaOS 3.1.
 - **M8.3 — Second BBS Adapter / AmiExpress investigation:** study and design
   the next adapter only after ABBS experience.
+- **M9 — Native ARexx Interface:** future persistent application port named
+  `AMIWEATHER` for status, refresh, location, and report automation.
 
 Each milestone should remain independently testable and avoid prematurely
 introducing background or elaborate UI infrastructure.

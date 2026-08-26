@@ -1,7 +1,11 @@
 ; AmiWeather ABBS 3.3 Shell door launcher
-; Install under ABBS:Doors/AmiWeather and reference this fixed path from
-; Node0Config/NodeXConfig. C:get values are documented ABBS local variables.
-C:get FullName
-C:get NodeNr
-ABBS:Doors/AmiWeather/AmiWeatherDoor --abbs-user "`get FullName`" --abbs-node "`get NodeNr`"
+;
+; ABBS supplies FullName and NodeNr as local variables.
+; Keep FailAt above any possible door return code so EndCLI is
+; always reached, even when AmiWeatherDoor reports an error.
+
+failat 2147483647
+
+ABBS:Doors/AmiWeather/AmiWeatherDoor
+
 EndCLI

@@ -135,16 +135,19 @@ StackSwap-protected entry point; it does not link Intuition or GadTools.
 The terminal abstraction covers bounded writes, key input, connection state,
 and terminal width. A generic Shell/stdio adapter is used for development;
 it is not an ABBS implementation. No authoritative ABBS 3.3 door invocation
-or ABI documentation is present in this repository, so `adapter_abbs.c` is an
-explicit skeleton and M8.1 must obtain the real interface before integration.
+or ABI documentation is present in this repository; the adapter remains
+deferred infrastructure and the qualified path uses only the documented Shell
+launcher.
 
 M8.1 supplies the thin documented ABBS Shell-door layer in
-`contrib/abbs/`. `AmiWeather.script` uses fixed paths, retrieves `FullName`
-and `NodeNr` through `C:get`, passes only bounded `--abbs-user` and
-`--abbs-node` arguments, and terminates with `EndCLI`. It does not use ARexx,
-Paragon behavior, private ABBS calls, or user-controlled command construction.
-The generic door remains independent of these arguments. No runtime ABBS
-qualification has been claimed; that is the M8.2 gate.
+`contrib/abbs/`. The launcher uses a fixed path, no command-line context, and
+terminates with `EndCLI`; it does not use ARexx, Paragon behavior, private
+ABBS calls, or user-controlled command construction. The interactive door
+session reuses the shared Open-Meteo report and generic H/D/7/A/W/L/R/Q
+rendering.
+The no-argument launcher and interactive session were qualified on ABBS 3.3
+under AmigaOS 3.1; user/node command-line context remains deliberately
+deferred.
 
 The expanded report is 1172 bytes under the m68k ABI. The Amiga entry point
 uses Exec `StackSwap()` with a 32768-byte `AllocMem()` stack before calling

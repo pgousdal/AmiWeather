@@ -1,8 +1,8 @@
 AmiWeather ABBS 3.3 Shell door
 ==============================
 
-This is the M8.1 Shell-door integration for ABBS 3.3. Runtime ABBS
-qualification is intentionally deferred to M8.2.
+This is the runtime-qualified Shell-door integration for ABBS 3.3. It uses
+the separate AmiWeatherDoor terminal frontend and the shared weather core.
 
 Requirements
 ------------
@@ -19,13 +19,14 @@ appropriate NodeXConfig (or Node0Config fallback), and add matching menu text
 from Node0Menu.example to Node0Menu/NodeXMenu. The number in the menu depends
 on the entry's position among valid doors; it is not always 1.
 
-The script retrieves the documented ABBS FullName and NodeNr variables with
-C:get, passes bounded values as --abbs-user and --abbs-node, runs the separate
-AmiWeatherDoor executable, and always executes EndCLI afterward. Keep this
-script simple: ABBS warns that a broken Shell-door script can expose an
-interactive shell to the caller.
+The script passes no command-line context, runs the separate AmiWeatherDoor
+executable, and always executes EndCLI afterward. Keep `failat 2147483647`
+before the door invocation: ABBS warns that a broken Shell-door script can
+expose an interactive shell if it stops before EndCLI.
 
 The generic terminal UI supports H (hourly), D (daily), 7 (seven day), A
 (fourteen day), W (details), L (location), R (refresh), and Q (return).
-M8.1 does not claim ABBS runtime compatibility until M8.2 testing confirms
-OPEN n, repeated sessions, EOF/disconnect behavior, and clean return to ABBS.
+The no-argument launcher and interactive OPEN n session were qualified on the
+ABBS 3.3 / AmigaOS 3.1 test system. Plain ASCII is the baseline; no ANSI
+capability is required. FullName/NodeNr context passing is deliberately not
+part of the qualified path.
