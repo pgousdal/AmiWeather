@@ -96,3 +96,61 @@ const char *amiweather_wmo_description(long weather_code)
     default: return "Unknown";
     }
 }
+
+const char *amiweather_wmo_compact_description(long weather_code)
+{
+    switch (weather_code) {
+    case 56: return "Light frz. drizzle";
+    case 57: return "Freezing drizzle";
+    case 66: return "Light frz. rain";
+    case 67: return "Freezing rain";
+    case 80: return "Light showers";
+    case 82: return "Heavy showers";
+    case 85: return "Light snow shwrs";
+    case 86: return "Snow showers";
+    case 96: return "T-storm / hail";
+    case 99: return "T-storm / hail";
+    default: return amiweather_wmo_description(weather_code);
+    }
+}
+
+static int leap_year(int year)
+{
+    return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+}
+
+int amiweather_format_forecast_date(const char *iso_date,
+                                    char *buffer, size_t size)
+{
+    static const char *weekdays[] = {
+        "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
+    };
+    static const int month_days[] = {
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+    };
+    int year, month, day, max_day;
+    int adjusted_month, adjusted_year, weekday;
+
+    if (!iso_date || !buffer || size < AMIWEATHER_COMPACT_DATE_SIZE)
+        return 0;
+    if (strlen(iso_date) != 10 || iso_date[4] != '-' || iso_date[7] != '-' ||
+        sscanf(iso_date, "%4d-%2d-%2d", &year, &month, &day) != 3 ||
+        year < 1 || month < 1 || month > 12)
+        return 0;
+    max_day = month_days[month - 1];
+    if (month == 2 && leap_year(year))
+        ++max_day;
+    if (day < 1 || day > max_day)
+        return 0;
+    adjusted_month = month;
+    adjusted_year = year;
+    if (adjusted_month < 3) {
+        adjusted_month += 12;
+        --adjusted_year;
+    }
+    weekday = (day + (13 * (adjusted_month + 1)) / 5 + adjusted_year +
+               adjusted_year / 4 - adjusted_year / 100 + adjusted_year / 400) % 7;
+    weekday = (weekday + 6) % 7;
+    snprintf(buffer, size, "%s %02d", weekdays[weekday], day);
+    return 1;
+}

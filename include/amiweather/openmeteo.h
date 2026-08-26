@@ -15,6 +15,12 @@ struct AmiWeatherResult amiweather_openmeteo_parse_current(
     struct AmiWeatherCurrent *current
 );
 
+struct AmiWeatherResult amiweather_openmeteo_parse_report(
+    const void *json,
+    size_t json_size,
+    struct AmiWeatherReport *report
+);
+
 struct AmiWeatherResult amiweather_openmeteo_fetch_reference(
     struct AmiWeatherCurrent *current
 );
@@ -33,6 +39,11 @@ struct AmiWeatherResult amiweather_geocode_search(
 struct AmiWeatherResult amiweather_openmeteo_fetch_current(
     const struct AmiWeatherLocation *location,
     struct AmiWeatherCurrent *current
+);
+
+struct AmiWeatherResult amiweather_openmeteo_fetch_report(
+    const struct AmiWeatherLocation *location,
+    struct AmiWeatherReport *report
 );
 
 #endif

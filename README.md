@@ -2,8 +2,8 @@
 
 AmiWeather is a native weather application for classic AmigaOS. The primary
 target is AmigaOS 3.x on a 68020 or newer processor; no FPU or MMU is required.
-The current M2 build remains version 0.0.1. It provides location search and
-current conditions for a selected place, while remaining an early build
+The current M3 build remains version 0.0.1. It provides location search,
+current conditions, and a five-day forecast, while remaining an early build
 rather than a user-ready release.
 
 The Amiga interface uses Intuition and GadTools on the user's public screen.
@@ -32,36 +32,40 @@ make PLATFORM=amiga AMIAPI_DIR=../AmiAPI
 and `build/libamiapi.a` and gives a direct error if either is absent. It never
 copies or rebuilds AmiAPI.
 
-## Location search and current conditions
+## Location search, current conditions, and forecast
 
 The native application opens on the user's public screen and fetches current
-weather for Oslo at launch. **Change...** opens a compact native GadTools
+weather and forecast for Oslo at launch. **Change...** opens a compact native GadTools
 search window. It searches Open-Meteo's geocoding API, presents up to eight
 `place, region, country` matches, and fetches weather before committing a
-selection. A failed first fetch leaves the previous location and weather
-intact. The selected location is retained in memory so Refresh uses it for the
+selection. A failed first fetch leaves the previous location, weather, and
+forecast intact. The selected location is retained in memory so Refresh uses it for the
 rest of the run; it is not yet persisted. It displays temperature, apparent
 temperature,
 relative humidity, wind speed, a human-readable condition derived from the WMO
 weather code, and observation time local to the selected location when its
-timezone is available. The GadTools **Refresh** button (or
-the `R` key) requests a new observation. Loading and network/error states are
-shown in the window; Intuition exposure redraws only the stored state and does
-not initiate network traffic.
+timezone is available. A compact native table adds up to five daily rows with
+weekday/date, WMO condition, minimum and maximum temperatures, and
+precipitation probability when supplied and space permits. Current and daily
+data use one Open-Meteo request and are committed together. The GadTools
+**Refresh** button (or the `R` key) updates both. Loading and concise errors are
+shown without discarding the last successful display; Intuition exposure
+redraws only stored state and does not initiate network traffic.
 
-Requests are synchronous in M2. Search, a selection's initial weather fetch,
+Requests are synchronous in M3. Search, a selection's initial weather fetch,
 launch, and Refresh can temporarily block GUI interaction until the request
 completes or AmiAPI's finite 20-second network
 timeout expires. Background/asynchronous requests may be evaluated later.
 
 The POSIX reference executable accepts an optional place query, selects the
-first result for smoke testing, and prints its current weather. It remains a
+first result for smoke testing, and prints its current weather and forecast. It remains a
 development and live-smoke-test aid, not a second product.
 
 Geocoding strings are kept as validated UTF-8 in bounded domain buffers.
 Classic screen fonts are not Unicode-aware, so unavailable non-Latin glyphs
 may display incorrectly and clipping is byte-oriented. Coordinates and API
-queries are unaffected; M2 does not add a general Unicode conversion layer.
+queries are unaffected; M3 does not add a general Unicode conversion layer.
 
-M2 has no forecasts, weather icons, persistence, favourites, preferences,
+Forecast storage is fixed at five application-owned entries. M3 has no hourly
+forecast, graphs, maps, custom icons, persistence, favourites, preferences,
 localization, or background refresh.

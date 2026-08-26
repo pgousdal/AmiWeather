@@ -6,7 +6,7 @@ int main(int argc, char **argv)
 {
     struct AmiWeatherLocation location;
     struct AmiWeatherLocationList locations;
-    struct AmiWeatherCurrent weather;
+    struct AmiWeatherReport report;
     struct AmiWeatherResult result;
     char display[AMIWEATHER_LOCATION_DISPLAY_SIZE];
 
@@ -21,7 +21,7 @@ int main(int argc, char **argv)
     } else {
         amiweather_location_default(&location);
     }
-    result = amiweather_openmeteo_fetch_current(&location, &weather);
+    result = amiweather_openmeteo_fetch_report(&location, &report);
     if (result.error != AMIWEATHER_OK) {
         fprintf(stderr, "AmiWeather: %s: %s\n",
                 amiweather_error_string(result.error), result.diagnostic);
@@ -29,14 +29,27 @@ int main(int argc, char **argv)
     }
     amiweather_location_format(&location, display, sizeof(display));
     printf("AmiWeather 0.0.1 - %s\n", display);
-    printf("Temperature: %.1f C\n", weather.temperature_c);
-    printf("Feels like: %.1f C\n", weather.apparent_temperature_c);
-    printf("Humidity: %.0f %%\n", weather.relative_humidity_percent);
-    printf("Wind: %.1f km/h\n", weather.wind_speed_kmh);
+    printf("Temperature: %.1f C\n", report.current.temperature_c);
+    printf("Feels like: %.1f C\n", report.current.apparent_temperature_c);
+    printf("Humidity: %.0f %%\n", report.current.relative_humidity_percent);
+    printf("Wind: %.1f km/h\n", report.current.wind_speed_kmh);
     printf("Condition: %s (WMO %ld)\n",
-           amiweather_wmo_description(weather.weather_code),
-           weather.weather_code);
-    printf("Observation: %s (%s)\n", weather.observation_time,
+           amiweather_wmo_description(report.current.weather_code),
+           report.current.weather_code);
+    printf("Observation: %s (%s)\n", report.current.observation_time,
            location.timezone[0] ? location.timezone : "local time");
+    puts("\nForecast:");
+    {
+        size_t i;
+        for (i = 0; i < report.forecast.count; ++i) {
+            const struct AmiWeatherDaily *day = &report.forecast.days[i];
+            printf("%s  %-24s  %.1f / %.1f C",
+                   day->date, amiweather_wmo_description(day->weather_code),
+                   day->temperature_min_c, day->temperature_max_c);
+            if (day->has_precipitation_probability)
+                printf("  %d%%", day->precipitation_probability);
+            putchar('\n');
+        }
+    }
     return 0;
 }

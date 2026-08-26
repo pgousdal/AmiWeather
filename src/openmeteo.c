@@ -100,6 +100,48 @@ static int json_optional_string(const struct AmiAPIJsonDoc *doc,
     return rc;
 }
 
+static int json_array_number(const struct AmiAPIJsonDoc *doc,
+                             const struct AmiAPIJsonValue *array,
+                             size_t index, double *number)
+{
+    const struct AmiAPIJsonValue *value;
+    const char *token;
+    size_t length;
+    char local[48];
+    char *end;
+
+    value = AmiAPI_JSONArrayGet(doc, array, index);
+    if (!value || AmiAPI_JSONType(value) != AMIAPI_JSON_NUMBER)
+        return 0;
+    if (AmiAPI_JSONNumberToken(doc, value, &token, &length) != AMIAPI_JSON_OK ||
+        length == 0 || length >= sizeof(local))
+        return 0;
+    memcpy(local, token, length);
+    local[length] = '\0';
+    errno = 0;
+    *number = strtod(local, &end);
+    return errno == 0 && end == local + length;
+}
+
+static int json_array_long(const struct AmiAPIJsonDoc *doc,
+                           const struct AmiAPIJsonValue *array,
+                           size_t index, long *number)
+{
+    const struct AmiAPIJsonValue *value = AmiAPI_JSONArrayGet(doc, array, index);
+    return value && AmiAPI_JSONType(value) == AMIAPI_JSON_NUMBER &&
+           AmiAPI_JSONLong(doc, value, number) == AMIAPI_JSON_OK;
+}
+
+static int json_array_string(const struct AmiAPIJsonDoc *doc,
+                             const struct AmiAPIJsonValue *array,
+                             size_t index, char *buffer, size_t size)
+{
+    const struct AmiAPIJsonValue *value = AmiAPI_JSONArrayGet(doc, array, index);
+    size_t required;
+    return value && AmiAPI_JSONType(value) == AMIAPI_JSON_STRING &&
+           AmiAPI_JSONStringCopy(doc, value, buffer, size, &required) == AMIAPI_JSON_OK;
+}
+
 struct AmiWeatherResult amiweather_openmeteo_parse_locations(
     const void *json, size_t json_size, struct AmiWeatherLocationList *locations)
 {
@@ -251,8 +293,130 @@ field_error:
                                    : "required current field has wrong type");
 }
 
+struct AmiWeatherResult amiweather_openmeteo_parse_report(
+    const void *json, size_t json_size, struct AmiWeatherReport *report)
+{
+    struct AmiAPIJsonDoc *doc;
+    const struct AmiAPIJsonValue *root;
+    const struct AmiAPIJsonValue *current_object;
+    const struct AmiAPIJsonValue *daily;
+    const struct AmiAPIJsonValue *times;
+    const struct AmiAPIJsonValue *codes;
+    const struct AmiAPIJsonValue *maximums;
+    const struct AmiAPIJsonValue *minimums;
+    const struct AmiAPIJsonValue *precipitation;
+    struct AmiWeatherReport parsed;
+    enum AmiAPIJsonError json_error;
+    size_t offset = 0;
+    size_t count, i;
+    int rc;
+
+    if (!json || !report)
+        return result_make(AMIWEATHER_ERR_ARGUMENT, 0, "null parser argument");
+    memset(&parsed, 0, sizeof(parsed));
+    doc = AmiAPI_JSONParse(json, json_size, &json_error, &offset);
+    if (!doc) {
+        char detail[96];
+        snprintf(detail, sizeof(detail), "JSON error %d at byte %lu",
+                 (int)json_error, (unsigned long)offset);
+        return result_make(AMIWEATHER_ERR_JSON, 0, detail);
+    }
+    root = AmiAPI_JSONRoot(doc);
+    if (!root || AmiAPI_JSONType(root) != AMIAPI_JSON_OBJECT)
+        goto missing;
+    current_object = AmiAPI_JSONObjectGet(doc, root, "current");
+    daily = AmiAPI_JSONObjectGet(doc, root, "daily");
+    if (!current_object || AmiAPI_JSONType(current_object) != AMIAPI_JSON_OBJECT ||
+        !daily || AmiAPI_JSONType(daily) != AMIAPI_JSON_OBJECT)
+        goto missing;
+#define REPORT_NUMBER(field, member) \
+    do { rc = json_number(doc, current_object, field, &parsed.current.member); \
+         if (rc == 0) goto missing; \
+         if (rc < 0) goto invalid; } while (0)
+    REPORT_NUMBER("temperature_2m", temperature_c);
+    REPORT_NUMBER("apparent_temperature", apparent_temperature_c);
+    REPORT_NUMBER("relative_humidity_2m", relative_humidity_percent);
+    REPORT_NUMBER("wind_speed_10m", wind_speed_kmh);
+#undef REPORT_NUMBER
+    rc = json_long(doc, current_object, "weather_code", &parsed.current.weather_code);
+    if (rc == 0) goto missing;
+    if (rc < 0) goto invalid;
+    rc = json_string(doc, current_object, "time", parsed.current.observation_time,
+                     sizeof(parsed.current.observation_time));
+    if (rc == 0) goto missing;
+    if (rc < 0) goto invalid;
+    if (parsed.current.relative_humidity_percent < 0.0 ||
+        parsed.current.relative_humidity_percent > 100.0 ||
+        parsed.current.wind_speed_kmh < 0.0 || parsed.current.weather_code < 0 ||
+        parsed.current.weather_code > 99 || !parsed.current.observation_time[0])
+        goto invalid;
+
+    times = AmiAPI_JSONObjectGet(doc, daily, "time");
+    codes = AmiAPI_JSONObjectGet(doc, daily, "weather_code");
+    maximums = AmiAPI_JSONObjectGet(doc, daily, "temperature_2m_max");
+    minimums = AmiAPI_JSONObjectGet(doc, daily, "temperature_2m_min");
+    precipitation = AmiAPI_JSONObjectGet(doc, daily,
+                                         "precipitation_probability_max");
+    if (!times || !codes || !maximums || !minimums)
+        goto missing;
+    if (AmiAPI_JSONType(times) != AMIAPI_JSON_ARRAY ||
+        AmiAPI_JSONType(codes) != AMIAPI_JSON_ARRAY ||
+        AmiAPI_JSONType(maximums) != AMIAPI_JSON_ARRAY ||
+        AmiAPI_JSONType(minimums) != AMIAPI_JSON_ARRAY ||
+        (precipitation && AmiAPI_JSONType(precipitation) != AMIAPI_JSON_ARRAY))
+        goto invalid;
+    count = AmiAPI_JSONArraySize(times);
+    if (count == 0)
+        goto invalid;
+    if (AmiAPI_JSONArraySize(codes) != count ||
+        AmiAPI_JSONArraySize(maximums) != count ||
+        AmiAPI_JSONArraySize(minimums) != count)
+        goto invalid;
+    if (count > AMIWEATHER_FORECAST_DAYS)
+        count = AMIWEATHER_FORECAST_DAYS;
+    for (i = 0; i < count; ++i) {
+        struct AmiWeatherDaily *day = &parsed.forecast.days[i];
+        char compact[AMIWEATHER_COMPACT_DATE_SIZE];
+        const struct AmiAPIJsonValue *probability_value;
+        long probability;
+        if (!json_array_string(doc, times, i, day->date, sizeof(day->date)) ||
+            !amiweather_format_forecast_date(day->date, compact, sizeof(compact)) ||
+            !json_array_long(doc, codes, i, &day->weather_code) ||
+            !json_array_number(doc, minimums, i, &day->temperature_min_c) ||
+            !json_array_number(doc, maximums, i, &day->temperature_max_c) ||
+            day->weather_code < 0 || day->weather_code > 99 ||
+            day->temperature_min_c < -150.0 || day->temperature_min_c > 100.0 ||
+            day->temperature_max_c < -150.0 || day->temperature_max_c > 100.0 ||
+            day->temperature_min_c > day->temperature_max_c)
+            goto invalid;
+        if (!precipitation || i >= AmiAPI_JSONArraySize(precipitation))
+            continue;
+        probability_value = AmiAPI_JSONArrayGet(doc, precipitation, i);
+        if (probability_value && AmiAPI_JSONType(probability_value) == AMIAPI_JSON_NULL)
+            continue;
+        if (!json_array_long(doc, precipitation, i, &probability) ||
+            probability < 0 || probability > 100)
+            goto invalid;
+        day->precipitation_probability = (int)probability;
+        day->has_precipitation_probability = 1;
+    }
+    parsed.forecast.count = count;
+    *report = parsed;
+    AmiAPI_JSONFree(doc);
+    return result_make(AMIWEATHER_OK, 0, NULL);
+missing:
+    AmiAPI_JSONFree(doc);
+    return result_make(AMIWEATHER_ERR_MISSING_FIELD, 0,
+                       "required current or daily field is absent");
+invalid:
+    AmiAPI_JSONFree(doc);
+    return result_make(AMIWEATHER_ERR_INVALID_FIELD, 0,
+                       "invalid current or daily weather field");
+}
+
 static struct AmiWeatherResult execute_query(struct AmiAPIQuery *query,
-    struct AmiWeatherCurrent *current, struct AmiWeatherLocationList *locations)
+    struct AmiWeatherCurrent *current, struct AmiWeatherReport *report,
+    struct AmiWeatherLocationList *locations)
 {
     struct AmiAPIContext *context = NULL;
     struct AmiAPIRequest *request = NULL;
@@ -285,7 +449,10 @@ static struct AmiWeatherResult execute_query(struct AmiAPIQuery *query,
         result = result_make(AMIWEATHER_ERR_HTTP_STATUS, status, detail);
         goto cleanup;
     }
-    if (current)
+    if (report)
+        result = amiweather_openmeteo_parse_report(
+            AmiAPI_Body(response), AmiAPI_BodySize(response), report);
+    else if (current)
         result = amiweather_openmeteo_parse_current(
             AmiAPI_Body(response), AmiAPI_BodySize(response), current);
     else
@@ -346,10 +513,51 @@ struct AmiWeatherResult amiweather_openmeteo_fetch_current(
     ADD("wind_speed_unit", "kmh");
     ADD("timezone", timezone);
 #undef ADD
-    result = execute_query(query, current, NULL);
+    result = execute_query(query, current, NULL, NULL);
     AmiAPI_QueryDestroy(query);
     return result;
 add_failed:
+    AmiAPI_QueryDestroy(query);
+    return result_make(error == AMIAPI_ERR_NO_MEMORY ? AMIWEATHER_ERR_MEMORY
+                                                     : AMIWEATHER_ERR_NETWORK,
+                       0, AmiAPI_ErrorString(error));
+}
+
+struct AmiWeatherResult amiweather_openmeteo_fetch_report(
+    const struct AmiWeatherLocation *location, struct AmiWeatherReport *report)
+{
+    struct AmiAPIQuery *query;
+    struct AmiWeatherResult result;
+    enum AmiAPIError error;
+    char latitude[24];
+    char longitude[24];
+    const char *timezone;
+
+    if (!location || !report || !location->name[0] ||
+        location->latitude < -90.0 || location->latitude > 90.0 ||
+        location->longitude < -180.0 || location->longitude > 180.0)
+        return result_make(AMIWEATHER_ERR_ARGUMENT, 0, "invalid location");
+    format_coordinate(latitude, sizeof(latitude), location->latitude);
+    format_coordinate(longitude, sizeof(longitude), location->longitude);
+    timezone = location->timezone[0] ? location->timezone : "auto";
+    query = AmiAPI_QueryCreate(AMIWEATHER_OPENMETEO_BASE_URL);
+    if (!query)
+        return result_make(AMIWEATHER_ERR_MEMORY, 0, "query allocation failed");
+#define ADD_REPORT(name, value) do { error = AmiAPI_QueryAdd(query, name, value); \
+    if (error != AMIAPI_OK) goto report_add_failed; } while (0)
+    ADD_REPORT("latitude", latitude);
+    ADD_REPORT("longitude", longitude);
+    ADD_REPORT("current", "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m");
+    ADD_REPORT("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max");
+    ADD_REPORT("temperature_unit", "celsius");
+    ADD_REPORT("wind_speed_unit", "kmh");
+    ADD_REPORT("timezone", timezone);
+    ADD_REPORT("forecast_days", "5");
+#undef ADD_REPORT
+    result = execute_query(query, NULL, report, NULL);
+    AmiAPI_QueryDestroy(query);
+    return result;
+report_add_failed:
     AmiAPI_QueryDestroy(query);
     return result_make(error == AMIAPI_ERR_NO_MEMORY ? AMIWEATHER_ERR_MEMORY
                                                      : AMIWEATHER_ERR_NETWORK,
@@ -392,7 +600,7 @@ struct AmiWeatherResult amiweather_geocode_search(
                                                          : AMIWEATHER_ERR_NETWORK,
                            0, AmiAPI_ErrorString(error));
     }
-    result = execute_query(query, NULL, locations);
+    result = execute_query(query, NULL, NULL, locations);
     AmiAPI_QueryDestroy(query);
     return result;
 }

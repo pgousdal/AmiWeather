@@ -194,6 +194,163 @@ static void test_empty_search_is_local_error(void)
     CHECK(result.error == AMIWEATHER_ERR_ARGUMENT);
 }
 
+static struct AmiWeatherResult parse_daily_object(
+    const char *daily, struct AmiWeatherReport *report)
+{
+    char fixture[4096];
+    int length = snprintf(fixture, sizeof(fixture),
+        "{\"current\":{\"time\":\"2026-08-26T12:00\","
+        "\"temperature_2m\":17.25,\"apparent_temperature\":16.5,"
+        "\"relative_humidity_2m\":73,\"weather_code\":3,"
+        "\"wind_speed_10m\":12.75},\"daily\":%s}", daily);
+    CHECK(length > 0 && (size_t)length < sizeof(fixture));
+    return amiweather_openmeteo_parse_report(fixture, (size_t)length, report);
+}
+
+static void expect_daily_error(const char *daily, enum AmiWeatherError error)
+{
+    struct AmiWeatherReport report;
+    struct AmiWeatherResult result = parse_daily_object(daily, &report);
+    CHECK(result.error == error);
+}
+
+static void test_forecast_valid_and_precipitation(void)
+{
+    static const char daily[] = "{"
+        "\"time\":[\"2026-08-26\",\"2026-08-27\",\"2026-08-28\",\"2026-08-29\",\"2026-08-30\"],"
+        "\"weather_code\":[2,63,4,0,81],"
+        "\"temperature_2m_max\":[25.1,21.4,20.2,22,19.3],"
+        "\"temperature_2m_min\":[17.2,15,-2.5,13.8,15.1],"
+        "\"precipitation_probability_max\":[0,100,null,20,80]}";
+    struct AmiWeatherReport report;
+    struct AmiWeatherResult result = parse_daily_object(daily, &report);
+    CHECK(result.error == AMIWEATHER_OK);
+    CHECK(report.forecast.count == 5);
+    CHECK(fabs(report.forecast.days[0].temperature_min_c - 17.2) < 0.001);
+    CHECK(fabs(report.forecast.days[0].temperature_max_c - 25.1) < 0.001);
+    CHECK(report.forecast.days[0].has_precipitation_probability);
+    CHECK(report.forecast.days[0].precipitation_probability == 0);
+    CHECK(report.forecast.days[1].precipitation_probability == 100);
+    CHECK(!report.forecast.days[2].has_precipitation_probability);
+    CHECK(strcmp(amiweather_wmo_description(report.forecast.days[2].weather_code),
+                 "Unknown") == 0);
+    CHECK(fabs(report.forecast.days[2].temperature_min_c - -2.5) < 0.001);
+}
+
+static void test_forecast_bounds_and_optional_precipitation(void)
+{
+    struct AmiWeatherReport report;
+    struct AmiWeatherResult result;
+    result = parse_daily_object(
+        "{\"time\":[\"2026-08-26\",\"2026-08-27\"],"
+        "\"weather_code\":[0,1],\"temperature_2m_max\":[2,3],"
+        "\"temperature_2m_min\":[1,2]}", &report);
+    CHECK(result.error == AMIWEATHER_OK);
+    CHECK(report.forecast.count == 2);
+    CHECK(!report.forecast.days[0].has_precipitation_probability);
+    result = parse_daily_object(
+        "{\"time\":[\"2026-08-26\",\"2026-08-27\",\"2026-08-28\",\"2026-08-29\",\"2026-08-30\",\"2026-08-31\"],"
+        "\"weather_code\":[0,1,2,3,45,48],"
+        "\"temperature_2m_max\":[2,3,4,5,6,7],"
+        "\"temperature_2m_min\":[1,2,3,4,5,6]}", &report);
+    CHECK(result.error == AMIWEATHER_OK);
+    CHECK(report.forecast.count == AMIWEATHER_FORECAST_DAYS);
+    CHECK(strcmp(report.forecast.days[4].date, "2026-08-30") == 0);
+}
+
+static void test_forecast_required_arrays(void)
+{
+    expect_daily_error("{\"time\":[],\"weather_code\":[],"
+        "\"temperature_2m_max\":[],\"temperature_2m_min\":[]}",
+        AMIWEATHER_ERR_INVALID_FIELD);
+    expect_daily_error("{\"weather_code\":[0],\"temperature_2m_max\":[2],"
+        "\"temperature_2m_min\":[1]}", AMIWEATHER_ERR_MISSING_FIELD);
+    expect_daily_error("{\"time\":[\"2026-08-26\"],\"temperature_2m_max\":[2],"
+        "\"temperature_2m_min\":[1]}", AMIWEATHER_ERR_MISSING_FIELD);
+    expect_daily_error("{\"time\":[\"2026-08-26\"],\"weather_code\":[0],"
+        "\"temperature_2m_min\":[1]}", AMIWEATHER_ERR_MISSING_FIELD);
+    expect_daily_error("{\"time\":[\"2026-08-26\"],\"weather_code\":[0],"
+        "\"temperature_2m_max\":[2]}", AMIWEATHER_ERR_MISSING_FIELD);
+    expect_daily_error("{\"time\":[\"2026-08-26\",\"2026-08-27\"],"
+        "\"weather_code\":[0],\"temperature_2m_max\":[2,3],"
+        "\"temperature_2m_min\":[1,2]}", AMIWEATHER_ERR_INVALID_FIELD);
+}
+
+static void test_forecast_invalid_entries(void)
+{
+    expect_daily_error("{\"time\":[null],\"weather_code\":[0],"
+        "\"temperature_2m_max\":[2],\"temperature_2m_min\":[1]}",
+        AMIWEATHER_ERR_INVALID_FIELD);
+    expect_daily_error("{\"time\":[\"2026-02-30\"],\"weather_code\":[0],"
+        "\"temperature_2m_max\":[2],\"temperature_2m_min\":[1]}",
+        AMIWEATHER_ERR_INVALID_FIELD);
+    expect_daily_error("{\"time\":[\"2026-08-26\"],\"weather_code\":[null],"
+        "\"temperature_2m_max\":[2],\"temperature_2m_min\":[1]}",
+        AMIWEATHER_ERR_INVALID_FIELD);
+    expect_daily_error("{\"time\":[\"2026-08-26\"],\"weather_code\":[100],"
+        "\"temperature_2m_max\":[2],\"temperature_2m_min\":[1]}",
+        AMIWEATHER_ERR_INVALID_FIELD);
+    expect_daily_error("{\"time\":[\"2026-08-26\"],\"weather_code\":[0],"
+        "\"temperature_2m_max\":[null],\"temperature_2m_min\":[1]}",
+        AMIWEATHER_ERR_INVALID_FIELD);
+    expect_daily_error("{\"time\":[\"2026-08-26\"],\"weather_code\":[0],"
+        "\"temperature_2m_max\":[2],\"temperature_2m_min\":[null]}",
+        AMIWEATHER_ERR_INVALID_FIELD);
+    expect_daily_error("{\"time\":[\"2026-08-26\"],\"weather_code\":[0],"
+        "\"temperature_2m_max\":[101],\"temperature_2m_min\":[1]}",
+        AMIWEATHER_ERR_INVALID_FIELD);
+    expect_daily_error("{\"time\":[\"2026-08-26\"],\"weather_code\":[0],"
+        "\"temperature_2m_max\":[1],\"temperature_2m_min\":[2]}",
+        AMIWEATHER_ERR_INVALID_FIELD);
+    expect_daily_error("{\"time\":[\"2026-08-26\"],\"weather_code\":[0],"
+        "\"temperature_2m_max\":[2],\"temperature_2m_min\":[1],"
+        "\"precipitation_probability_max\":[-1]}", AMIWEATHER_ERR_INVALID_FIELD);
+    expect_daily_error("{\"time\":[\"2026-08-26\"],\"weather_code\":[0],"
+        "\"temperature_2m_max\":[2],\"temperature_2m_min\":[1],"
+        "\"precipitation_probability_max\":[101]}", AMIWEATHER_ERR_INVALID_FIELD);
+}
+
+static void test_report_commit_is_atomic(void)
+{
+    struct AmiWeatherReport report;
+    struct AmiWeatherResult result;
+    memset(&report, 0, sizeof(report));
+    report.current.weather_code = 63;
+    report.forecast.count = 4;
+    result = parse_daily_object(
+        "{\"time\":[\"bad-date\"],\"weather_code\":[0],"
+        "\"temperature_2m_max\":[2],\"temperature_2m_min\":[1]}", &report);
+    CHECK(result.error == AMIWEATHER_ERR_INVALID_FIELD);
+    CHECK(report.current.weather_code == 63);
+    CHECK(report.forecast.count == 4);
+}
+
+static void test_forecast_date_formatting(void)
+{
+    char display[AMIWEATHER_COMPACT_DATE_SIZE];
+    CHECK(amiweather_format_forecast_date("2026-08-26", display,
+                                          sizeof(display)));
+    CHECK(strcmp(display, "Wed 26") == 0);
+    CHECK(amiweather_format_forecast_date("2024-02-29", display,
+                                          sizeof(display)));
+    CHECK(strcmp(display, "Thu 29") == 0);
+    CHECK(amiweather_format_forecast_date("2026-08-31", display,
+                                          sizeof(display)));
+    CHECK(strcmp(display, "Mon 31") == 0);
+    CHECK(amiweather_format_forecast_date("2027-01-01", display,
+                                          sizeof(display)));
+    CHECK(strcmp(display, "Fri 01") == 0);
+    CHECK(!amiweather_format_forecast_date("2026-02-29", display,
+                                           sizeof(display)));
+}
+
+static void test_compact_descriptions(void)
+{
+    CHECK(strcmp(amiweather_wmo_compact_description(96), "T-storm / hail") == 0);
+    CHECK(strcmp(amiweather_wmo_compact_description(2), "Partly cloudy") == 0);
+    CHECK(strcmp(amiweather_wmo_compact_description(4), "Unknown") == 0);
+}
+
 int main(void)
 {
     test_wmo_descriptions();
@@ -207,6 +364,13 @@ int main(void)
     test_geocoding_bounds();
     test_default_location();
     test_empty_search_is_local_error();
+    test_forecast_valid_and_precipitation();
+    test_forecast_bounds_and_optional_precipitation();
+    test_forecast_required_arrays();
+    test_forecast_invalid_entries();
+    test_report_commit_is_atomic();
+    test_forecast_date_formatting();
+    test_compact_descriptions();
     if (failures) {
         fprintf(stderr, "%d test(s) failed\n", failures);
         return 1;

@@ -38,9 +38,10 @@ enum ViewState {
 
 struct ApplicationState {
     enum ViewState view;
-    struct AmiWeatherCurrent weather;
+    struct AmiWeatherReport report;
     struct AmiWeatherResult result;
     struct AmiWeatherLocation location;
+    BOOL has_report;
 };
 
 struct WindowLayout {
@@ -64,13 +65,13 @@ static void calculate_layout(const struct Screen *screen,
     WORD available_height = screen->Height - 12;
     WORD desired_height;
 
-    layout->width = available_width < 400 ? available_width : 400;
+    layout->width = available_width < 500 ? available_width : 500;
     layout->left = screen->WBorLeft + 12;
     layout->content_top = screen->WBorTop + font_height + 10;
     layout->baseline_step = font_height + 4;
     layout->gadget_width = 88;
     layout->gadget_height = font_height + 10;
-    desired_height = layout->content_top + 9 * layout->baseline_step +
+    desired_height = layout->content_top + 15 * layout->baseline_step +
                      layout->gadget_height + screen->WBorBottom + 10;
     layout->height = desired_height < available_height
         ? desired_height : available_height;
@@ -193,11 +194,11 @@ static void draw_content(struct Window *window,
     draw_line(rp, layout, 0, line);
     SetSoftStyle(rp, FS_NORMAL, supported_style);
 
-    if (application->view == VIEW_LOADING) {
+    if (!application->has_report && application->view == VIEW_LOADING) {
         draw_line(rp, layout, 2, "Fetching weather...");
         return;
     }
-    if (application->view == VIEW_ERROR) {
+    if (!application->has_report && application->view == VIEW_ERROR) {
         draw_line(rp, layout, 2, "Unable to update weather");
         draw_line(rp, layout, 4, visible_error_detail(&application->result));
         return;
@@ -209,7 +210,7 @@ static void draw_content(struct Window *window,
         format_tenths(
             value,
             sizeof(value),
-            application->weather.temperature_c
+            application->report.current.temperature_c
         );
         snprintf(line, sizeof(line), "%s \260C", value);
     }
@@ -218,7 +219,7 @@ static void draw_content(struct Window *window,
     draw_line(rp, layout, 2, line);
     SetSoftStyle(rp, FS_NORMAL, supported_style);
     draw_line(rp, layout, 3,
-              amiweather_wmo_description(application->weather.weather_code));
+              amiweather_wmo_description(application->report.current.weather_code));
 
     {
         char value[32];
@@ -226,19 +227,19 @@ static void draw_content(struct Window *window,
         format_tenths(
             value,
             sizeof(value),
-            application->weather.apparent_temperature_c
+            application->report.current.apparent_temperature_c
         );
         snprintf(line, sizeof(line), "Feels like %s \260C", value);
     }
-    draw_line(rp, layout, 5, line);
+    draw_line(rp, layout, 4, line);
 
     snprintf(
         line,
         sizeof(line),
         "Humidity %ld%%",
-        (long)(application->weather.relative_humidity_percent + 0.5)
+        (long)(application->report.current.relative_humidity_percent + 0.5)
     );
-    draw_line(rp, layout, 6, line);
+    draw_line(rp, layout, 5, line);
 
     {
         char value[32];
@@ -246,29 +247,61 @@ static void draw_content(struct Window *window,
         format_tenths(
             value,
             sizeof(value),
-            application->weather.wind_speed_kmh
+            application->report.current.wind_speed_kmh
         );
         snprintf(line, sizeof(line), "Wind %s km/h", value);
     }
-    draw_line(rp, layout, 7, line);
-    snprintf(line, sizeof(line), "Observed %s",
-             application->weather.observation_time);
-    draw_line(rp, layout, 8, line);
+    draw_line(rp, layout, 6, line);
+
+    SetSoftStyle(rp, FSF_BOLD, supported_style);
+    draw_line(rp, layout, 8, "Forecast");
+    SetSoftStyle(rp, FS_NORMAL, supported_style);
+    {
+        size_t i;
+        for (i = 0; i < application->report.forecast.count; ++i) {
+            const struct AmiWeatherDaily *day =
+                &application->report.forecast.days[i];
+            char date[AMIWEATHER_COMPACT_DATE_SIZE];
+            char minimum[24];
+            char maximum[24];
+            const char *condition =
+                amiweather_wmo_compact_description(day->weather_code);
+            amiweather_format_forecast_date(day->date, date, sizeof(date));
+            format_tenths(minimum, sizeof(minimum), day->temperature_min_c);
+            format_tenths(maximum, sizeof(maximum), day->temperature_max_c);
+            if (layout->width >= 460 && day->has_precipitation_probability)
+                snprintf(line, sizeof(line), "%-6s %-18s %3d%%  %s / %s \260C",
+                         date, condition, day->precipitation_probability,
+                         minimum, maximum);
+            else
+                snprintf(line, sizeof(line), "%-6s %-18s %s / %s \260C",
+                         date, condition, minimum, maximum);
+            draw_line(rp, layout, (WORD)(9 + i), line);
+        }
+    }
+    if (application->view == VIEW_LOADING)
+        draw_line(rp, layout, 14, "Updating...");
+    else if (application->view == VIEW_ERROR) {
+        snprintf(line, sizeof(line), "Update failed: %s",
+                 visible_error_detail(&application->result));
+        draw_line(rp, layout, 14, line);
+    }
 }
 
 static void fetch_weather(struct Window *window,
                           const struct WindowLayout *layout,
                           struct ApplicationState *application)
 {
-    struct AmiWeatherCurrent updated;
+    struct AmiWeatherReport updated;
     struct AmiWeatherResult result;
 
     application->view = VIEW_LOADING;
     draw_content(window, layout, application);
-    result = amiweather_openmeteo_fetch_current(&application->location, &updated);
+    result = amiweather_openmeteo_fetch_report(&application->location, &updated);
     application->result = result;
     if (result.error == AMIWEATHER_OK) {
-        application->weather = updated;
+        application->report = updated;
+        application->has_report = TRUE;
         application->view = VIEW_WEATHER;
     } else {
         application->view = VIEW_ERROR;
@@ -559,15 +592,16 @@ int amiweather_gui_run(void)
             if (change_requested && running) {
                 struct AmiWeatherLocation candidate;
                 if (search_location(screen, visual_info, &candidate)) {
-                    struct AmiWeatherCurrent updated;
+                    struct AmiWeatherReport updated;
                     struct AmiWeatherResult fetch_result;
                     application.view = VIEW_LOADING;
                     draw_content(window, &layout, &application);
-                    fetch_result = amiweather_openmeteo_fetch_current(&candidate,
-                                                                      &updated);
+                    fetch_result = amiweather_openmeteo_fetch_report(&candidate,
+                                                                     &updated);
                     if (fetch_result.error == AMIWEATHER_OK) {
                         application.location = candidate;
-                        application.weather = updated;
+                        application.report = updated;
+                        application.has_report = TRUE;
                         application.result = fetch_result;
                         application.view = VIEW_WEATHER;
                     } else {

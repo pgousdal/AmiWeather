@@ -8,9 +8,11 @@
 - **M2 — Location search and selection (complete):** bounded Open-Meteo
   geocoding, native GadTools search/result selection, and in-memory location
   state. Search and fetch remain synchronous; persistence is deferred.
-- **M3 — Forecast Presentation:** present forecast data with a polished,
-  restrained classic Amiga interface.
-- **M4 — Usability:** preferences, persistence, and platform hardening.
+- **M3 — Daily Forecast Presentation (complete):** bounded five-day daily
+  forecast, shared current-plus-daily request, defensive parallel-array parsing,
+  and a restrained classic Amiga forecast table.
+- **M4 — Preferences and Saved Locations:** preferences, persistence, and
+  saved-location usability.
 
 Each milestone should remain independently testable and avoid prematurely
 introducing background or elaborate UI infrastructure.
