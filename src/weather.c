@@ -1,4 +1,8 @@
 #include <amiweather/weather.h>
+#include <amiweather/location.h>
+
+#include <stdio.h>
+#include <string.h>
 
 const char *amiweather_error_string(enum AmiWeatherError error)
 {
@@ -11,7 +15,50 @@ const char *amiweather_error_string(enum AmiWeatherError error)
     case AMIWEATHER_ERR_JSON: return "malformed JSON";
     case AMIWEATHER_ERR_MISSING_FIELD: return "missing weather field";
     case AMIWEATHER_ERR_INVALID_FIELD: return "invalid weather field";
+    case AMIWEATHER_ERR_NOT_FOUND: return "no matching locations";
     default: return "unknown error";
+    }
+}
+
+void amiweather_location_default(struct AmiWeatherLocation *location)
+{
+    if (!location)
+        return;
+    memset(location, 0, sizeof(*location));
+    snprintf(location->name, sizeof(location->name), "%s", "Oslo");
+    snprintf(location->country, sizeof(location->country), "%s", "Norway");
+    snprintf(location->country_code, sizeof(location->country_code), "%s", "NO");
+    snprintf(location->timezone, sizeof(location->timezone), "%s", "Europe/Oslo");
+    location->latitude = 59.9139;
+    location->longitude = 10.7522;
+}
+
+void amiweather_location_format(const struct AmiWeatherLocation *location,
+                                char *buffer, size_t size)
+{
+    size_t used;
+    const char *parts[3];
+    size_t i;
+
+    if (!buffer || size == 0)
+        return;
+    buffer[0] = '\0';
+    if (!location)
+        return;
+    parts[0] = location->name;
+    parts[1] = location->admin1;
+    parts[2] = location->country;
+    for (i = 0; i < 3; ++i) {
+        if (!parts[i][0])
+            continue;
+        used = strlen(buffer);
+        if (used && used + 2 < size) {
+            buffer[used++] = ',';
+            buffer[used++] = ' ';
+            buffer[used] = '\0';
+        }
+        if (used < size - 1)
+            strncat(buffer, parts[i], size - used - 1);
     }
 }
 

@@ -12,6 +12,7 @@
 
 #define OPENMETEO_MAX_BODY (64UL * 1024UL)
 #define OPENMETEO_TIMEOUT_SECONDS 20U
+#define OPENMETEO_GEOCODING_LIMIT "8"
 
 static struct AmiWeatherResult result_make(enum AmiWeatherError error,
                                             int status,
@@ -87,6 +88,107 @@ static int json_string(const struct AmiAPIJsonDoc *doc,
     return 1;
 }
 
+static int json_optional_string(const struct AmiAPIJsonDoc *doc,
+                                const struct AmiAPIJsonValue *object,
+                                const char *name, char *buffer, size_t size)
+{
+    int rc = json_string(doc, object, name, buffer, size);
+    if (rc == 0) {
+        buffer[0] = '\0';
+        return 1;
+    }
+    return rc;
+}
+
+struct AmiWeatherResult amiweather_openmeteo_parse_locations(
+    const void *json, size_t json_size, struct AmiWeatherLocationList *locations)
+{
+    struct AmiAPIJsonDoc *doc;
+    const struct AmiAPIJsonValue *root;
+    const struct AmiAPIJsonValue *array;
+    enum AmiAPIJsonError json_error;
+    size_t offset = 0;
+    size_t count;
+    size_t i;
+
+    if (!json || !locations)
+        return result_make(AMIWEATHER_ERR_ARGUMENT, 0, "null parser argument");
+    memset(locations, 0, sizeof(*locations));
+    doc = AmiAPI_JSONParse(json, json_size, &json_error, &offset);
+    if (!doc) {
+        char detail[96];
+        snprintf(detail, sizeof(detail), "JSON error %d at byte %lu",
+                 (int)json_error, (unsigned long)offset);
+        return result_make(AMIWEATHER_ERR_JSON, 0, detail);
+    }
+    root = AmiAPI_JSONRoot(doc);
+    array = root && AmiAPI_JSONType(root) == AMIAPI_JSON_OBJECT
+        ? AmiAPI_JSONObjectGet(doc, root, "results") : NULL;
+    if (!array) {
+        AmiAPI_JSONFree(doc);
+        return result_make(AMIWEATHER_ERR_NOT_FOUND, 0, "no matching locations");
+    }
+    if (AmiAPI_JSONType(array) != AMIAPI_JSON_ARRAY) {
+        AmiAPI_JSONFree(doc);
+        return result_make(AMIWEATHER_ERR_INVALID_FIELD, 0,
+                           "geocoding results is not an array");
+    }
+    count = AmiAPI_JSONArraySize(array);
+    if (count > AMIWEATHER_LOCATION_MAX_RESULTS)
+        count = AMIWEATHER_LOCATION_MAX_RESULTS;
+    for (i = 0; i < count; ++i) {
+        const struct AmiAPIJsonValue *item = AmiAPI_JSONArrayGet(doc, array, i);
+        struct AmiWeatherLocation *location = &locations->locations[i];
+        int rc;
+        if (!item || AmiAPI_JSONType(item) != AMIAPI_JSON_OBJECT)
+            goto invalid;
+        rc = json_string(doc, item, "name", location->name,
+                         sizeof(location->name));
+        if (rc < 0)
+            goto invalid;
+        if (rc == 0 || location->name[0] == '\0')
+            goto required;
+        rc = json_number(doc, item, "latitude", &location->latitude);
+        if (rc < 0)
+            goto invalid;
+        if (rc == 0)
+            goto required;
+        rc = json_number(doc, item, "longitude", &location->longitude);
+        if (rc < 0)
+            goto invalid;
+        if (rc == 0)
+            goto required;
+        if (location->latitude < -90.0 || location->latitude > 90.0 ||
+            location->longitude < -180.0 || location->longitude > 180.0)
+            goto invalid;
+        if (json_optional_string(doc, item, "admin1", location->admin1,
+                                 sizeof(location->admin1)) < 0 ||
+            json_optional_string(doc, item, "country", location->country,
+                                 sizeof(location->country)) < 0 ||
+            json_optional_string(doc, item, "country_code", location->country_code,
+                                 sizeof(location->country_code)) < 0 ||
+            json_optional_string(doc, item, "timezone", location->timezone,
+                                 sizeof(location->timezone)) < 0)
+            goto invalid;
+        ++locations->count;
+    }
+    AmiAPI_JSONFree(doc);
+    if (locations->count == 0)
+        return result_make(AMIWEATHER_ERR_NOT_FOUND, 0, "no matching locations");
+    return result_make(AMIWEATHER_OK, 0, NULL);
+
+required:
+    AmiAPI_JSONFree(doc);
+    memset(locations, 0, sizeof(*locations));
+    return result_make(AMIWEATHER_ERR_MISSING_FIELD, 0,
+                       "location requires name and coordinates");
+invalid:
+    AmiAPI_JSONFree(doc);
+    memset(locations, 0, sizeof(*locations));
+    return result_make(AMIWEATHER_ERR_INVALID_FIELD, 0,
+                       "invalid geocoding result field");
+}
+
 struct AmiWeatherResult amiweather_openmeteo_parse_current(
     const void *json, size_t json_size, struct AmiWeatherCurrent *current)
 {
@@ -149,19 +251,16 @@ field_error:
                                    : "required current field has wrong type");
 }
 
-struct AmiWeatherResult amiweather_openmeteo_fetch_reference(
-    struct AmiWeatherCurrent *current)
+static struct AmiWeatherResult execute_query(struct AmiAPIQuery *query,
+    struct AmiWeatherCurrent *current, struct AmiWeatherLocationList *locations)
 {
     struct AmiAPIContext *context = NULL;
-    struct AmiAPIQuery *query = NULL;
     struct AmiAPIRequest *request = NULL;
     struct AmiAPIResponse *response = NULL;
     struct AmiWeatherResult result;
     enum AmiAPIError api_error = AMIAPI_OK;
     int status = 0;
 
-    if (!current)
-        return result_make(AMIWEATHER_ERR_ARGUMENT, 0, "null weather output");
     context = AmiAPI_Create();
     if (!context) {
         result = result_make(AMIWEATHER_ERR_MEMORY, 0, "AmiAPI_Create failed");
@@ -169,21 +268,6 @@ struct AmiWeatherResult amiweather_openmeteo_fetch_reference(
     }
     AmiAPI_SetMaxBody(context, OPENMETEO_MAX_BODY);
     AmiAPI_SetTimeout(context, OPENMETEO_TIMEOUT_SECONDS);
-    query = AmiAPI_QueryCreate(AMIWEATHER_OPENMETEO_BASE_URL);
-    if (!query) {
-        result = result_make(AMIWEATHER_ERR_MEMORY, 0, "query allocation failed");
-        goto cleanup;
-    }
-#define ADD_QUERY(name, value) \
-    do { api_error = AmiAPI_QueryAdd(query, name, value); \
-         if (api_error != AMIAPI_OK) goto api_failure; } while (0)
-    ADD_QUERY("latitude", "59.9139");
-    ADD_QUERY("longitude", "10.7522");
-    ADD_QUERY("current", "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m");
-    ADD_QUERY("temperature_unit", "celsius");
-    ADD_QUERY("wind_speed_unit", "kmh");
-    ADD_QUERY("timezone", "UTC");
-#undef ADD_QUERY
     request = AmiAPI_RequestCreate(context, "GET", AmiAPI_QueryURL(query));
     if (!request) {
         api_error = AmiAPI_LastError(context);
@@ -201,8 +285,12 @@ struct AmiWeatherResult amiweather_openmeteo_fetch_reference(
         result = result_make(AMIWEATHER_ERR_HTTP_STATUS, status, detail);
         goto cleanup;
     }
-    result = amiweather_openmeteo_parse_current(
-        AmiAPI_Body(response), AmiAPI_BodySize(response), current);
+    if (current)
+        result = amiweather_openmeteo_parse_current(
+            AmiAPI_Body(response), AmiAPI_BodySize(response), current);
+    else
+        result = amiweather_openmeteo_parse_locations(
+            AmiAPI_Body(response), AmiAPI_BodySize(response), locations);
     result.http_status = status;
     goto cleanup;
 
@@ -213,7 +301,98 @@ api_failure:
 cleanup:
     AmiAPI_FreeResponse(response);
     AmiAPI_RequestDestroy(request);
-    AmiAPI_QueryDestroy(query);
     AmiAPI_Destroy(context);
+    return result;
+}
+
+static void format_coordinate(char *buffer, size_t size, double value)
+{
+    long millionths = value >= 0.0
+        ? (long)(value * 1000000.0 + 0.5)
+        : (long)(value * 1000000.0 - 0.5);
+    unsigned long magnitude = millionths < 0
+        ? (unsigned long)(-(millionths + 1L)) + 1UL
+        : (unsigned long)millionths;
+    snprintf(buffer, size, "%s%lu.%06lu", millionths < 0 ? "-" : "",
+             magnitude / 1000000UL, magnitude % 1000000UL);
+}
+
+struct AmiWeatherResult amiweather_openmeteo_fetch_current(
+    const struct AmiWeatherLocation *location, struct AmiWeatherCurrent *current)
+{
+    struct AmiAPIQuery *query;
+    struct AmiWeatherResult result;
+    enum AmiAPIError error;
+    char latitude[24];
+    char longitude[24];
+    const char *timezone;
+
+    if (!location || !current || !location->name[0] ||
+        location->latitude < -90.0 || location->latitude > 90.0 ||
+        location->longitude < -180.0 || location->longitude > 180.0)
+        return result_make(AMIWEATHER_ERR_ARGUMENT, 0, "invalid location");
+    format_coordinate(latitude, sizeof(latitude), location->latitude);
+    format_coordinate(longitude, sizeof(longitude), location->longitude);
+    timezone = location->timezone[0] ? location->timezone : "auto";
+    query = AmiAPI_QueryCreate(AMIWEATHER_OPENMETEO_BASE_URL);
+    if (!query)
+        return result_make(AMIWEATHER_ERR_MEMORY, 0, "query allocation failed");
+#define ADD(name, value) do { error = AmiAPI_QueryAdd(query, name, value); \
+    if (error != AMIAPI_OK) goto add_failed; } while (0)
+    ADD("latitude", latitude);
+    ADD("longitude", longitude);
+    ADD("current", "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m");
+    ADD("temperature_unit", "celsius");
+    ADD("wind_speed_unit", "kmh");
+    ADD("timezone", timezone);
+#undef ADD
+    result = execute_query(query, current, NULL);
+    AmiAPI_QueryDestroy(query);
+    return result;
+add_failed:
+    AmiAPI_QueryDestroy(query);
+    return result_make(error == AMIAPI_ERR_NO_MEMORY ? AMIWEATHER_ERR_MEMORY
+                                                     : AMIWEATHER_ERR_NETWORK,
+                       0, AmiAPI_ErrorString(error));
+}
+
+struct AmiWeatherResult amiweather_openmeteo_fetch_reference(
+    struct AmiWeatherCurrent *current)
+{
+    struct AmiWeatherLocation location;
+    amiweather_location_default(&location);
+    return amiweather_openmeteo_fetch_current(&location, current);
+}
+
+struct AmiWeatherResult amiweather_geocode_search(
+    const char *search, struct AmiWeatherLocationList *locations)
+{
+    struct AmiAPIQuery *query;
+    struct AmiWeatherResult result;
+    enum AmiAPIError error;
+    const char *p;
+
+    if (!search || !locations)
+        return result_make(AMIWEATHER_ERR_ARGUMENT, 0, "null search argument");
+    for (p = search; *p == ' ' || *p == '\t'; ++p) {}
+    if (!*p)
+        return result_make(AMIWEATHER_ERR_ARGUMENT, 0, "empty location search");
+    memset(locations, 0, sizeof(*locations));
+    query = AmiAPI_QueryCreate(AMIWEATHER_OPENMETEO_GEOCODING_URL);
+    if (!query)
+        return result_make(AMIWEATHER_ERR_MEMORY, 0, "query allocation failed");
+    error = AmiAPI_QueryAdd(query, "name", p);
+    if (error == AMIAPI_OK)
+        error = AmiAPI_QueryAdd(query, "count", OPENMETEO_GEOCODING_LIMIT);
+    if (error == AMIAPI_OK)
+        error = AmiAPI_QueryAdd(query, "language", "en");
+    if (error != AMIAPI_OK) {
+        AmiAPI_QueryDestroy(query);
+        return result_make(error == AMIAPI_ERR_NO_MEMORY ? AMIWEATHER_ERR_MEMORY
+                                                         : AMIWEATHER_ERR_NETWORK,
+                           0, AmiAPI_ErrorString(error));
+    }
+    result = execute_query(query, NULL, locations);
+    AmiAPI_QueryDestroy(query);
     return result;
 }
