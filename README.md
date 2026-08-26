@@ -111,8 +111,9 @@ file, rolls back on publication failure, and removes the backup after success.
 This is the safest portable strategy used because rename-over-existing behavior
 is not guaranteed across classic Amiga filesystems.
 
-Forecast storage is fixed at five daily and twelve hourly application-owned
-entries. M6 has no charts, maps, animations, localization, asynchronous
+Forecast storage is fixed at fourteen daily and twelve hourly application-owned
+entries; the main view remains five daily rows. M7 has no charts, maps,
+animations, localization, asynchronous
 networking, or background refresh. A Workbench `.info` icon is deliberately
 deferred because no reliable icon-generation toolchain is available in the
 build environment.

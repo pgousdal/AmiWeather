@@ -114,6 +114,22 @@ detached before being freed during every cleanup path.
 
 About is a synchronous native EasyRequest requester and requires no network.
 
+## Extended forecasts and release hardening
+
+M7 requests and stores up to fourteen bounded daily entries. The main window
+continues to draw five; Daily Forecast, 7 Day Forecast, and 14 Day Forecast
+are native list windows over the committed report and never fetch on open.
+Weather Details is a native requester showing optional pressure, cloud cover,
+visibility, precipitation, gust, and wind-direction fields only when supplied.
+Wind bearings use an eight-point deterministic compass helper.
+
+The expanded report is 1172 bytes under the m68k ABI. Report parsing and
+refresh paths keep large report temporaries in static application-owned
+storage, while bounded secondary lists retain their nodes and labels until
+gadgets are released. This reduces avoidable stack pressure and does not
+require a manual Shell `stack 65536` command; the application remains subject
+to the normal Amiga process stack provision.
+
 ## Hourly selection and presentation
 
 Open-Meteo receives `hourly=temperature_2m,weather_code,precipitation_probability`

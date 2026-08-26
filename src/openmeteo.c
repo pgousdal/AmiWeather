@@ -58,6 +58,16 @@ static int json_number(const struct AmiAPIJsonDoc *doc,
     return 1;
 }
 
+static int json_optional_number(const struct AmiAPIJsonDoc *doc,
+                                const struct AmiAPIJsonValue *object,
+                                const char *name, double *number)
+{
+    const struct AmiAPIJsonValue *value = AmiAPI_JSONObjectGet(doc, object, name);
+    if (!value || AmiAPI_JSONType(value) == AMIAPI_JSON_NULL)
+        return 0;
+    return json_number(doc, object, name, number);
+}
+
 static int json_long(const struct AmiAPIJsonDoc *doc,
                      const struct AmiAPIJsonValue *object,
                      const char *name,
@@ -310,7 +320,7 @@ struct AmiWeatherResult amiweather_openmeteo_parse_report(
     const struct AmiAPIJsonValue *hourly_temperatures;
     const struct AmiAPIJsonValue *hourly_codes;
     const struct AmiAPIJsonValue *hourly_precipitation;
-    struct AmiWeatherReport parsed;
+    static struct AmiWeatherReport parsed;
     enum AmiAPIJsonError json_error;
     size_t offset = 0;
     size_t count, i, hourly_count, hourly_start;
@@ -362,6 +372,20 @@ struct AmiWeatherResult amiweather_openmeteo_parse_report(
                                            compact_time, sizeof(compact_time)))
             goto invalid;
     }
+    {
+        double value;
+#define OPTIONAL_CURRENT(field, member, minimum, maximum, flag) \
+        do { rc = json_optional_number(doc, current_object, field, &value); \
+             if (rc < 0 || (rc > 0 && (value < (minimum) || value > (maximum)))) goto invalid; \
+             if (rc > 0) { parsed.current.member = value; parsed.current.flag = 1; } } while (0)
+        OPTIONAL_CURRENT("wind_direction_10m", wind_direction_degrees, 0.0, 360.0, has_wind_direction);
+        OPTIONAL_CURRENT("wind_gusts_10m", wind_gusts, 0.0, 1000.0, has_wind_gusts);
+        OPTIONAL_CURRENT("surface_pressure", surface_pressure, 0.0, 2000.0, has_surface_pressure);
+        OPTIONAL_CURRENT("cloud_cover", cloud_cover_percent, 0.0, 100.0, has_cloud_cover);
+        OPTIONAL_CURRENT("visibility", visibility_m, 0.0, 1000000.0, has_visibility);
+        OPTIONAL_CURRENT("precipitation", precipitation_mm, 0.0, 10000.0, has_precipitation);
+#undef OPTIONAL_CURRENT
+    }
 
     times = AmiAPI_JSONObjectGet(doc, daily, "time");
     codes = AmiAPI_JSONObjectGet(doc, daily, "weather_code");
@@ -384,8 +408,8 @@ struct AmiWeatherResult amiweather_openmeteo_parse_report(
         AmiAPI_JSONArraySize(maximums) != count ||
         AmiAPI_JSONArraySize(minimums) != count)
         goto invalid;
-    if (count > AMIWEATHER_FORECAST_DAYS)
-        count = AMIWEATHER_FORECAST_DAYS;
+    if (count > AMIWEATHER_MAX_DAILY)
+        count = AMIWEATHER_MAX_DAILY;
     for (i = 0; i < count; ++i) {
         struct AmiWeatherDaily *day = &parsed.forecast.days[i];
         char compact[AMIWEATHER_COMPACT_DATE_SIZE];
@@ -595,7 +619,7 @@ struct AmiWeatherResult amiweather_openmeteo_fetch_current(
     if (error != AMIAPI_OK) goto add_failed; } while (0)
     ADD("latitude", latitude);
     ADD("longitude", longitude);
-    ADD("current", "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m");
+    ADD("current", "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,surface_pressure,cloud_cover,visibility,precipitation");
     ADD("temperature_unit", "celsius");
     ADD("wind_speed_unit", "kmh");
     ADD("timezone", timezone);
@@ -639,13 +663,13 @@ static struct AmiAPIQuery *report_query(
     if (error != AMIAPI_OK) goto report_add_failed; } while (0)
     ADD_REPORT("latitude", latitude);
     ADD_REPORT("longitude", longitude);
-    ADD_REPORT("current", "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m");
+    ADD_REPORT("current", "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,surface_pressure,cloud_cover,visibility,precipitation");
     ADD_REPORT("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max");
     ADD_REPORT("hourly", "temperature_2m,weather_code,precipitation_probability");
     ADD_REPORT("temperature_unit", amiweather_temperature_unit_query(temperature_unit));
     ADD_REPORT("wind_speed_unit", amiweather_wind_unit_query(wind_unit));
     ADD_REPORT("timezone", timezone);
-    ADD_REPORT("forecast_days", "5");
+    ADD_REPORT("forecast_days", "14");
 #undef ADD_REPORT
     return query;
 report_add_failed:

@@ -131,6 +131,18 @@ enum AmiWeatherIcon amiweather_wmo_icon(long weather_code)
     }
 }
 
+const char *amiweather_wind_direction(double degrees)
+{
+    static const char *const points[] = {
+        "N", "NE", "E", "SE", "S", "SW", "W", "NW"
+    };
+    long sector;
+    while (degrees < 0.0) degrees += 360.0;
+    while (degrees >= 360.0) degrees -= 360.0;
+    sector = (long)((degrees + 22.5) / 45.0);
+    return points[sector & 7];
+}
+
 static int leap_year(int year)
 {
     return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);

@@ -6,6 +6,7 @@
 
 #define AMIWEATHER_OBSERVATION_TIME_SIZE 32
 #define AMIWEATHER_FORECAST_DAYS 5
+#define AMIWEATHER_MAX_DAILY 14
 #define AMIWEATHER_DATE_SIZE 11
 #define AMIWEATHER_COMPACT_DATE_SIZE 7
 #define AMIWEATHER_HOURLY_COUNT 12
@@ -34,6 +35,18 @@ struct AmiWeatherCurrent {
     double wind_speed_kmh;
     long weather_code;
     char observation_time[AMIWEATHER_OBSERVATION_TIME_SIZE];
+    double wind_direction_degrees;
+    double wind_gusts;
+    double surface_pressure;
+    double cloud_cover_percent;
+    double visibility_m;
+    double precipitation_mm;
+    int has_wind_direction;
+    int has_wind_gusts;
+    int has_surface_pressure;
+    int has_cloud_cover;
+    int has_visibility;
+    int has_precipitation;
 };
 
 struct AmiWeatherDaily {
@@ -46,7 +59,7 @@ struct AmiWeatherDaily {
 };
 
 struct AmiWeatherForecast {
-    struct AmiWeatherDaily days[AMIWEATHER_FORECAST_DAYS];
+    struct AmiWeatherDaily days[AMIWEATHER_MAX_DAILY];
     size_t count;
 };
 
@@ -97,5 +110,6 @@ int amiweather_format_forecast_date(const char *iso_date,
                                     char *buffer, size_t size);
 int amiweather_format_hourly_time(const char *iso_time,
                                   char *buffer, size_t size);
+const char *amiweather_wind_direction(double degrees);
 
 #endif

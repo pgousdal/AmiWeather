@@ -25,10 +25,11 @@ Requires:     intuition.library, gadtools.library, graphics.library
 Distribution: Aminet; MIT License
 
 Description:
-AmiWeather displays current conditions, a five-day daily forecast, and the
-next twelve local forecast hours. It supports Open-Meteo location search, up
-to eight saved locations, startup defaults, and Celsius/Fahrenheit plus
-km/h/mph preferences. The interface uses native Intuition and GadTools
+AmiWeather displays current conditions, a five-day daily forecast, extended
+7/14-day forecast views, and the next twelve local forecast hours. It supports
+Open-Meteo location search, up to eight saved locations, startup defaults, and
+Celsius/Fahrenheit plus km/h/mph preferences. Weather Details shows available
+current measurements. The interface uses native Intuition and GadTools
 controls with small compiled-in few-color weather symbols.
 
 Installation:
@@ -38,7 +39,8 @@ tooltypes are required.
 Usage:
 Use the Project, Location, Forecast, and Settings menus for secondary actions.
 Change... searches; Saved Locations... saves/uses/removes/defaults places;
-Preferences... selects units; Hourly... shows the next twelve hours; and
+Preferences... selects units; Daily Forecast..., 7 Day Forecast..., 14 Day
+Forecast..., Hourly..., and Weather Details... show stored forecast data; and
 Refresh updates all weather sections.
 
 Network requirements:

@@ -109,7 +109,11 @@ enum MenuAction {
     MENU_CHANGE,
     MENU_LOCATIONS,
     MENU_HOURLY,
-    MENU_PREFERENCES
+    MENU_PREFERENCES,
+    MENU_DAILY,
+    MENU_7DAY,
+    MENU_14DAY,
+    MENU_DETAILS
 };
 
 static struct Menu *create_application_menus(APTR visual_info)
@@ -131,6 +135,15 @@ static struct Menu *create_application_menus(APTR visual_info)
         { NM_TITLE, (CONST_STRPTR)"Forecast", NULL, 0, 0, NULL },
         { NM_ITEM, (CONST_STRPTR)"Hourly...", (CONST_STRPTR)"H", 0, 0,
           (APTR)MENU_HOURLY },
+        { NM_ITEM, (CONST_STRPTR)"Daily Forecast...", (CONST_STRPTR)"D", 0, 0,
+          (APTR)MENU_DAILY },
+        { NM_ITEM, NM_BARLABEL, NULL, 0, 0, NULL },
+        { NM_ITEM, (CONST_STRPTR)"7 Day Forecast...", (CONST_STRPTR)"7", 0, 0,
+          (APTR)MENU_7DAY },
+        { NM_ITEM, (CONST_STRPTR)"14 Day Forecast...", (CONST_STRPTR)"4", 0, 0,
+          (APTR)MENU_14DAY },
+        { NM_ITEM, (CONST_STRPTR)"Weather Details...", (CONST_STRPTR)"W", 0, 0,
+          (APTR)MENU_DETAILS },
         { NM_TITLE, (CONST_STRPTR)"Settings", NULL, 0, 0, NULL },
         { NM_ITEM, (CONST_STRPTR)"Preferences...", (CONST_STRPTR)"P", 0, 0,
           (APTR)MENU_PREFERENCES },
@@ -149,10 +162,11 @@ static void show_about(struct Window *parent)
     struct EasyStruct about;
     char text[320];
     snprintf(text, sizeof(text),
-             "AmiWeather %s\\n\\nNative weather client for AmigaOS\\n\\n"
-             "Weather data: Open-Meteo\\nHTTP/API support: AmiAPI\\n"
-             "HTTPS: AmiSSL\\n\\nCopyright (c) 2026 Per Gustav Ousdal\\n"
+             "AmiWeather %s\n\nNative weather client for AmigaOS\n\n"
+             "Weather data: Open-Meteo\nHTTP/API support: AmiAPI\n"
+             "HTTPS: AmiSSL\n\nCopyright (c) 2026 Per Gustav Ousdal\n"
              "Licensed under the MIT License", AMIWEATHER_VERSION);
+    about.es_StructSize = sizeof(about);
     about.es_Flags = 0;
     about.es_Title = (UBYTE *)"About AmiWeather";
     about.es_TextFormat = (UBYTE *)text;
@@ -390,7 +404,8 @@ static void draw_content(struct Window *window,
     SetSoftStyle(rp, FS_NORMAL, supported_style);
     {
         size_t i;
-        for (i = 0; i < application->report.forecast.count; ++i) {
+        for (i = 0; i < application->report.forecast.count &&
+             i < AMIWEATHER_FORECAST_DAYS; ++i) {
             const struct AmiWeatherDaily *day =
                 &application->report.forecast.days[i];
             char date[AMIWEATHER_COMPACT_DATE_SIZE];
@@ -429,7 +444,7 @@ static void fetch_weather(struct Window *window,
                           const struct WindowLayout *layout,
                           struct ApplicationState *application)
 {
-    struct AmiWeatherReport updated;
+    static struct AmiWeatherReport updated;
     struct AmiWeatherResult result;
 
     application->view = VIEW_LOADING;
@@ -866,6 +881,98 @@ cleanup:
     return use_location;
 }
 
+static void forecast_window(struct Screen *screen, APTR visual_info,
+                            const struct ApplicationState *application,
+                            size_t limit, const char *title_text)
+{
+    struct Window *window = NULL;
+    struct Gadget *gadgets = NULL, *gadget;
+    struct NewGadget ng;
+    struct List labels;
+    struct Node nodes[AMIWEATHER_MAX_DAILY];
+    char display[AMIWEATHER_MAX_DAILY][96];
+    struct IntuiMessage *message;
+    WORD font_height = screen->Font ? screen->Font->ta_YSize : 8;
+    WORD width = screen->Width - 20 < 470 ? screen->Width - 20 : 470;
+    WORD height = screen->Height - 20 < 236 ? screen->Height - 20 : 236;
+    WORD top = screen->WBorTop + font_height + 8;
+    WORD button_height = font_height + 8;
+    BOOL running = TRUE;
+    size_t i, count = application->report.forecast.count < limit
+        ? application->report.forecast.count : limit;
+    if (!application->has_report || count == 0) return;
+    initialize_list(&labels);
+    for (i = 0; i < count; ++i) {
+        const struct AmiWeatherDaily *day = &application->report.forecast.days[i];
+        char date[AMIWEATHER_COMPACT_DATE_SIZE], minimum[24], maximum[24];
+        amiweather_format_forecast_date(day->date, date, sizeof(date));
+        format_tenths(minimum, sizeof(minimum), day->temperature_min_c);
+        format_tenths(maximum, sizeof(maximum), day->temperature_max_c);
+        snprintf(display[i], sizeof(display[i]), "%-6s %-20s %s / %s \260%s",
+                 date, amiweather_wmo_compact_description(day->weather_code),
+                 minimum, maximum,
+                 amiweather_temperature_unit_label(application->preferences.temperature_unit));
+        if (day->has_precipitation_probability)
+            snprintf(display[i] + strlen(display[i]), sizeof(display[i]) - strlen(display[i]),
+                     "  %d%%", day->precipitation_probability);
+        memset(&nodes[i], 0, sizeof(nodes[i])); nodes[i].ln_Name = display[i];
+        AddTail(&labels, &nodes[i]);
+    }
+    gadget = CreateContext(&gadgets); if (!gadget) return;
+    memset(&ng, 0, sizeof(ng)); ng.ng_LeftEdge = 12; ng.ng_TopEdge = top;
+    ng.ng_Width = width - 24; ng.ng_Height = height - top - button_height - screen->WBorBottom - 12;
+    ng.ng_GadgetID = GID_RESULTS; ng.ng_VisualInfo = visual_info; ng.ng_TextAttr = screen->Font;
+    gadget = CreateGadget(LISTVIEW_KIND, gadget, &ng, GTLV_Labels, (ULONG)&labels, TAG_DONE);
+    if (!gadget) goto forecast_cleanup;
+    memset(&ng, 0, sizeof(ng)); ng.ng_LeftEdge = width - 92; ng.ng_TopEdge = height - button_height - screen->WBorBottom - 5;
+    ng.ng_Width = 80; ng.ng_Height = button_height; ng.ng_GadgetText = (CONST_STRPTR)"_Close";
+    ng.ng_GadgetID = GID_SAVED_CLOSE; ng.ng_VisualInfo = visual_info; ng.ng_TextAttr = screen->Font;
+    gadget = CreateGadget(BUTTON_KIND, gadget, &ng, GT_Underscore, (ULONG)'_', TAG_DONE);
+    if (!gadget) goto forecast_cleanup;
+    window = OpenWindowTags(NULL, WA_Title, (ULONG)title_text, WA_CustomScreen, (ULONG)screen,
+        WA_Width, (ULONG)width, WA_Height, (ULONG)height, WA_DragBar, TRUE, WA_DepthGadget, TRUE,
+        WA_CloseGadget, TRUE, WA_Activate, TRUE, WA_Gadgets, (ULONG)gadgets,
+        WA_IDCMP, IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_REFRESHWINDOW, TAG_DONE);
+    if (!window) goto forecast_cleanup;
+    GT_RefreshWindow(window, NULL);
+    while (running) { Wait(1UL << window->UserPort->mp_SigBit);
+        while ((message = GT_GetIMsg(window->UserPort)) != NULL) {
+            ULONG class = message->Class; UWORD id = class == IDCMP_GADGETUP
+                ? ((struct Gadget *)message->IAddress)->GadgetID : 0; GT_ReplyIMsg(message);
+            if (class == IDCMP_CLOSEWINDOW || id == GID_SAVED_CLOSE) running = FALSE;
+            else if (class == IDCMP_REFRESHWINDOW) { GT_BeginRefresh(window); GT_EndRefresh(window, TRUE); }
+        }
+    }
+forecast_cleanup:
+    if (window) CloseWindow(window); if (gadgets) FreeGadgets(gadgets);
+}
+
+static void details_window(struct Window *parent, const struct ApplicationState *application)
+{
+    char text[768], temperature[24], apparent[24], wind[24], humidity[24], gusts[24], pressure[24], cloud[24], visibility[24], precipitation[24];
+    const struct AmiWeatherCurrent *c = &application->report.current;
+    format_tenths(temperature, sizeof(temperature), c->temperature_c);
+    format_tenths(apparent, sizeof(apparent), c->apparent_temperature_c);
+    format_tenths(wind, sizeof(wind), c->wind_speed_kmh);
+    format_tenths(humidity, sizeof(humidity), c->relative_humidity_percent);
+    snprintf(text, sizeof(text), "Temperature       %s \260%s\nFeels like        %s \260%s\nHumidity          %s %%%%\nWind              %s %s\n",
+             temperature, amiweather_temperature_unit_label(application->preferences.temperature_unit), apparent,
+             amiweather_temperature_unit_label(application->preferences.temperature_unit), humidity,
+             wind, amiweather_wind_unit_label(application->preferences.wind_unit));
+    if (c->has_wind_direction) { snprintf(text + strlen(text), sizeof(text) - strlen(text), "Wind direction    %s\n", amiweather_wind_direction(c->wind_direction_degrees)); }
+    if (c->has_wind_gusts) { format_tenths(gusts, sizeof(gusts), c->wind_gusts); snprintf(text + strlen(text), sizeof(text) - strlen(text), "Wind gusts        %s %s\n", gusts, amiweather_wind_unit_label(application->preferences.wind_unit)); }
+    if (c->has_surface_pressure) { format_tenths(pressure, sizeof(pressure), c->surface_pressure); snprintf(text + strlen(text), sizeof(text) - strlen(text), "Pressure           %s hPa\n", pressure); }
+    if (c->has_cloud_cover) { format_tenths(cloud, sizeof(cloud), c->cloud_cover_percent); snprintf(text + strlen(text), sizeof(text) - strlen(text), "Cloud cover        %s %%%%\n", cloud); }
+    if (c->has_visibility) { format_tenths(visibility, sizeof(visibility), c->visibility_m / 1000.0); snprintf(text + strlen(text), sizeof(text) - strlen(text), "Visibility         %s km\n", visibility); }
+    if (c->has_precipitation) { format_tenths(precipitation, sizeof(precipitation), c->precipitation_mm); snprintf(text + strlen(text), sizeof(text) - strlen(text), "Precipitation      %s mm", precipitation); }
+    { struct EasyStruct about;
+      about.es_StructSize = sizeof(about); about.es_Flags = 0;
+      about.es_Title = (CONST_STRPTR)"Weather Details";
+      about.es_TextFormat = (CONST_STRPTR)text;
+      about.es_GadgetFormat = (CONST_STRPTR)"OK";
+      EasyRequest(parent, &about, NULL); }
+}
+
 static void hourly_window(struct Screen *screen, APTR visual_info,
                           struct Window *parent,
                           const struct ApplicationState *application)
@@ -980,7 +1087,7 @@ int amiweather_gui_run(void)
     struct Gadget *gadget;
     struct NewGadget ng;
     struct WindowLayout layout;
-    struct ApplicationState application;
+    static struct ApplicationState application;
     APTR visual_info = NULL;
     struct IntuiMessage *message;
     ULONG class;
@@ -991,6 +1098,10 @@ int amiweather_gui_run(void)
     BOOL locations_requested;
     BOOL preferences_requested;
     BOOL hourly_requested;
+    BOOL daily_requested;
+    BOOL week_requested;
+    BOOL fortnight_requested;
+    BOOL details_requested;
     struct Menu *menus = NULL;
     enum MenuAction menu_action;
     enum AmiWeatherPreferencesError preferences_load_result;
@@ -1100,6 +1211,8 @@ int amiweather_gui_run(void)
             locations_requested = FALSE;
             preferences_requested = FALSE;
             hourly_requested = FALSE;
+            daily_requested = FALSE; week_requested = FALSE;
+            fortnight_requested = FALSE; details_requested = FALSE;
             menu_action = 0;
             if (class == IDCMP_CLOSEWINDOW)
                 running = FALSE;
@@ -1121,6 +1234,10 @@ int amiweather_gui_run(void)
                     hourly_requested = TRUE;
                 else if (menu_action == MENU_PREFERENCES)
                     preferences_requested = TRUE;
+                else if (menu_action == MENU_DAILY) daily_requested = TRUE;
+                else if (menu_action == MENU_7DAY) week_requested = TRUE;
+                else if (menu_action == MENU_14DAY) fortnight_requested = TRUE;
+                else if (menu_action == MENU_DETAILS) details_requested = TRUE;
             }
             else if (class == IDCMP_GADGETUP &&
                      ((struct Gadget *)message->IAddress)->GadgetID == GID_REFRESH)
@@ -1150,7 +1267,7 @@ int amiweather_gui_run(void)
             if (change_requested && running) {
                 struct AmiWeatherLocation candidate;
                 if (search_location(screen, visual_info, &candidate)) {
-                    struct AmiWeatherReport updated;
+                    static struct AmiWeatherReport updated;
                     struct AmiWeatherResult fetch_result;
                     application.view = VIEW_LOADING;
                     draw_content(window, &layout, &application);
@@ -1174,7 +1291,7 @@ int amiweather_gui_run(void)
                 struct AmiWeatherLocation candidate;
                 if (saved_locations_window(screen, visual_info, window,
                         &application.preferences, &application.location, &candidate)) {
-                    struct AmiWeatherReport updated;
+                    static struct AmiWeatherReport updated;
                     struct AmiWeatherResult fetch_result;
                     application.view = VIEW_LOADING;
                     draw_content(window, &layout, &application);
@@ -1197,7 +1314,7 @@ int amiweather_gui_run(void)
             if (preferences_requested && running) {
                 struct AmiWeatherPreferences candidate_preferences = application.preferences;
                 if (preferences_window(screen, visual_info, &candidate_preferences)) {
-                    struct AmiWeatherReport updated;
+                    static struct AmiWeatherReport updated;
                     struct AmiWeatherResult fetch_result;
                     enum AmiWeatherPreferencesError save_result;
                     application.view = VIEW_LOADING;
@@ -1226,6 +1343,14 @@ int amiweather_gui_run(void)
             }
             if (hourly_requested && running)
                 hourly_window(screen, visual_info, window, &application);
+            if (daily_requested && running)
+                forecast_window(screen, visual_info, &application, 5, "Daily Forecast");
+            if (week_requested && running)
+                forecast_window(screen, visual_info, &application, 7, "7 Day Forecast");
+            if (fortnight_requested && running)
+                forecast_window(screen, visual_info, &application, 14, "14 Day Forecast");
+            if (details_requested && running && application.has_report)
+                details_window(window, &application);
         }
     }
     result = 0;

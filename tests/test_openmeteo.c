@@ -202,7 +202,9 @@ static struct AmiWeatherResult parse_daily_object(
         "{\"current\":{\"time\":\"2026-08-26T12:00\","
         "\"temperature_2m\":17.25,\"apparent_temperature\":16.5,"
         "\"relative_humidity_2m\":73,\"weather_code\":3,"
-        "\"wind_speed_10m\":12.75},\"daily\":%s,"
+        "\"wind_speed_10m\":12.75,\"wind_direction_10m\":225,"
+        "\"wind_gusts_10m\":20,\"surface_pressure\":1016,"
+        "\"cloud_cover\":12,\"visibility\":24000,\"precipitation\":0},\"daily\":%s,"
         "\"hourly\":{\"time\":[\"2026-08-26T12:00\"],"
         "\"temperature_2m\":[17.25],\"weather_code\":[2],"
         "\"precipitation_probability\":[0]}}", daily);
@@ -229,6 +231,8 @@ static void test_forecast_valid_and_precipitation(void)
     struct AmiWeatherResult result = parse_daily_object(daily, &report);
     CHECK(result.error == AMIWEATHER_OK);
     CHECK(report.forecast.count == 5);
+    CHECK(report.current.has_wind_direction && report.current.wind_direction_degrees == 225.0);
+    CHECK(report.current.has_surface_pressure && report.current.surface_pressure == 1016.0);
     CHECK(fabs(report.forecast.days[0].temperature_min_c - 17.2) < 0.001);
     CHECK(fabs(report.forecast.days[0].temperature_max_c - 25.1) < 0.001);
     CHECK(report.forecast.days[0].has_precipitation_probability);
@@ -257,7 +261,7 @@ static void test_forecast_bounds_and_optional_precipitation(void)
         "\"temperature_2m_max\":[2,3,4,5,6,7],"
         "\"temperature_2m_min\":[1,2,3,4,5,6]}", &report);
     CHECK(result.error == AMIWEATHER_OK);
-    CHECK(report.forecast.count == AMIWEATHER_FORECAST_DAYS);
+    CHECK(report.forecast.count == 6);
     CHECK(strcmp(report.forecast.days[4].date, "2026-08-30") == 0);
 }
 
@@ -369,6 +373,17 @@ static void test_wmo_icons(void)
     CHECK(amiweather_wmo_icon(95) == AMIWEATHER_ICON_THUNDERSTORM);
     CHECK(amiweather_wmo_icon(4) == AMIWEATHER_ICON_UNKNOWN);
     CHECK(amiweather_wmo_icon(100) == AMIWEATHER_ICON_UNKNOWN);
+}
+
+static void test_wind_direction(void)
+{
+    CHECK(strcmp(amiweather_wind_direction(0.0), "N") == 0);
+    CHECK(strcmp(amiweather_wind_direction(22.4), "N") == 0);
+    CHECK(strcmp(amiweather_wind_direction(22.5), "NE") == 0);
+    CHECK(strcmp(amiweather_wind_direction(180.0), "S") == 0);
+    CHECK(strcmp(amiweather_wind_direction(359.9), "N") == 0);
+    CHECK(strcmp(amiweather_wind_direction(360.0), "N") == 0);
+    CHECK(strcmp(amiweather_wind_direction(-1.0), "N") == 0);
 }
 
 static struct AmiWeatherResult parse_hourly_object(
@@ -514,6 +529,7 @@ int main(void)
     test_forecast_date_formatting();
     test_compact_descriptions();
     test_wmo_icons();
+    test_wind_direction();
     test_hourly_valid_selection_and_bound();
     test_hourly_fewer_optional_and_boundaries();
     test_hourly_errors();

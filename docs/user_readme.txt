@@ -28,11 +28,13 @@ persistent fallback. Missing files are normal first-run state.
 
 Weather views
 -------------
-Refresh updates current, daily, and hourly data synchronously. Hourly... opens
-a compact list of up to twelve local hours with a small native weather symbol,
-condition, temperature, and precipitation chance. Network requests can
-temporarily block the interface until AmiAPI's finite timeout expires. Window
-exposure and opening Hourly never make a network request.
+Refresh updates current, daily, and hourly data synchronously. The main window
+shows five daily rows. Forecast > Daily Forecast..., 7 Day Forecast..., and
+14 Day Forecast... open bounded native lists; Hourly... shows twelve local
+hours; Weather Details... shows available current measurements. Opening any
+view uses the last successful report and makes no network request. Network
+requests can temporarily block the interface until AmiAPI's finite timeout
+expires.
 
 Troubleshooting
 ---------------
