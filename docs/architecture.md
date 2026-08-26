@@ -123,7 +123,12 @@ Weather Details is a native requester showing optional pressure, cloud cover,
 visibility, precipitation, gust, and wind-direction fields only when supplied.
 Wind bearings use an eight-point deterministic compass helper.
 
-The expanded report is 1172 bytes under the m68k ABI. Report parsing and
+The expanded report is 1172 bytes under the m68k ABI. The Amiga entry point
+uses Exec `StackSwap()` with a 32768-byte `AllocMem()` stack before calling
+`amiweather_gui_run()`, and restores the original stack before freeing it.
+This is the AmigaOS 3.1 correctness mechanism; the `$STACK:32768` cookie is
+only supplementary (a linked dependency may also contribute `$STACK:65536`).
+Users do not need to issue a Shell `Stack` command. Report parsing and
 refresh paths keep large report temporaries in static application-owned
 storage, while bounded secondary lists retain their nodes and labels until
 gadgets are released. This reduces avoidable stack pressure and does not

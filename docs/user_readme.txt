@@ -9,7 +9,8 @@ Installation
 ------------
 Copy AmiWeather to any drawer and run it from Workbench or Shell. It uses the
 public screen and standard Intuition/GadTools controls; no icon or tooltypes
-are required.
+are required. AmiWeather provisions its own runtime stack; no manual Shell
+Stack command is required, including on AmigaOS 3.1.
 
 The Amiga build requires a working bsdsocket.library-compatible TCP/IP stack,
 DNS access, and AmiSSL 5 for HTTPS. AmiTCP_NG is tested but not mandatory.

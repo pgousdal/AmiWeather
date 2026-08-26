@@ -2,16 +2,20 @@
 
 AmiWeather is a native weather application for classic AmigaOS. The primary
 target is AmigaOS 3.x on a 68020 or newer processor; no FPU or MMU is required.
-The current M6 build is version 0.1.0. It provides persistent preferences,
+The current M7.1 release candidate is version 0.1.0. It provides persistent preferences,
 saved locations, current conditions, five daily rows, and a twelve-entry hourly
 forecast, while remaining an early build
-rather than a user-ready release.
+and a native 12-entry hourly forecast.
 
 The Amiga interface uses Intuition and GadTools on the user's public screen.
 It has **no MUI, ReAction, SDL, Qt, GTK, or portable GUI-toolkit dependency**.
 AmiWeather consumes [AmiAPI](../AmiAPI/README.md) as an external SDK and does
 not include its sources or private headers. HTTPS on AmigaOS therefore needs a
 bsdsocket.library-compatible TCP/IP stack and AmiSSL 5, as required by AmiAPI.
+AmiWeather supports AmigaOS 3.1 and internally provisions a 32 KiB runtime
+stack before entering the GUI/network call tree; users do not need to run a
+Shell `Stack` command. The embedded `$STACK:32768` token is supplementary and
+is not required for OS 3.1 correctness.
 
 ## Build
 

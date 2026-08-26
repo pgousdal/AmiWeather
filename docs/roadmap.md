@@ -22,8 +22,9 @@
 - **M6.1 — Native Menus and About (complete):** native Project, Location,
   Forecast, and Settings menus, a compact About requester, and a reduced
   three-button primary action row.
-- **M7 — Release Hardening / Aminet 0.1.0:** final manual QA and upload
-  preparation; no further feature development is planned here.
+- **M7 — Release Hardening / Aminet 0.1.0 (complete):** extended forecast
+  views, native stack compatibility, and manual QA on Kickstart 40.68 /
+  Workbench 40.42.
 
 Each milestone should remain independently testable and avoid prematurely
 introducing background or elaborate UI infrastructure.
