@@ -125,10 +125,12 @@ build environment.
 ## Aminet release
 
 After building the Amiga AmiAPI archive, run `make release PLATFORM=amiga`.
-This creates `dist/AmiWeather-0.1.0.lha`, its `.sha256` sidecar, and a clean
-staging tree. The release script generates an Aminet-style readme with hashes
-from the exact staged executable, creates an LHA archive with `jlha`, and the
-validation script tests/list-extracts it and verifies the executable hash.
+This creates the two Aminet upload artifacts `dist/AmiWeather-0.1.0.lha` and
+`dist/AmiWeather-0.1.0.readme`, plus its local `.sha256` sidecar and a clean
+staging tree. The release script generates one canonical Aminet readme with
+hashes from the exact staged executable, copies it into the archive, creates an
+LHA archive with `jlha`, and the validation script tests/list-extracts it and
+verifies the executable hash.
 The archive is not uploaded automatically.
 
 ## Contact

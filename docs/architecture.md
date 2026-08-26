@@ -193,8 +193,9 @@ The project version is 0.1.0 and is defined in the AmiWeather public weather
 header. `LICENSE` contains the MIT license naming Per Gustav Ousdal. `make
 release PLATFORM=amiga` stages only the executable, user README, license,
 Aminet readme, and architecture document, then uses `jlha` to create
-`dist/AmiWeather-0.1.0.lha`, writes its SHA-256 sidecar, and validates archive
-listing/extraction plus the staged executable hash. `jlha` stores generic LHA
+`dist/AmiWeather-0.1.0.lha` and the companion
+`dist/AmiWeather-0.1.0.readme`, writes its SHA-256 sidecar, and validates
+archive listing/extraction plus the staged executable hash. `jlha` stores generic LHA
 file timestamps, so archive bytes may vary by run even though the staged
 content set and embedded executable hashes are reproducible. No Workbench `.info`
 icon is shipped because no reliable icon-generation toolchain is available.
