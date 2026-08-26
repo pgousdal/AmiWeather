@@ -1,0 +1,3 @@
+; Add this S entry to the appropriate NodeXConfig (or Node0Config fallback).
+; The door number is determined by its position among valid entries.
+S ABBS:Doors/AmiWeather/AmiWeather.script ; AmiWeather

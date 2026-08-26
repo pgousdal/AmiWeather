@@ -1,0 +1,31 @@
+AmiWeather ABBS 3.3 Shell door
+==============================
+
+This is the M8.1 Shell-door integration for ABBS 3.3. Runtime ABBS
+qualification is intentionally deferred to M8.2.
+
+Requirements
+------------
+Install AmiWeatherDoor, AmiSSL 5, a bsdsocket.library-compatible TCP/IP
+stack, DNS, and Internet access. AmiWeatherDoor uses plain DOS stream I/O,
+ASCII output, and its own bounded 32 KiB runtime stack. No manual Stack
+command is required.
+
+Installation
+------------
+Copy AmiWeatherDoor and AmiWeather.script into a fixed drawer such as
+ABBS:Doors/AmiWeather/. Add the S line from Node0Config.example to the
+appropriate NodeXConfig (or Node0Config fallback), and add matching menu text
+from Node0Menu.example to Node0Menu/NodeXMenu. The number in the menu depends
+on the entry's position among valid doors; it is not always 1.
+
+The script retrieves the documented ABBS FullName and NodeNr variables with
+C:get, passes bounded values as --abbs-user and --abbs-node, runs the separate
+AmiWeatherDoor executable, and always executes EndCLI afterward. Keep this
+script simple: ABBS warns that a broken Shell-door script can expose an
+interactive shell to the caller.
+
+The generic terminal UI supports H (hourly), D (daily), 7 (seven day), A
+(fourteen day), W (details), L (location), R (refresh), and Q (return).
+M8.1 does not claim ABBS runtime compatibility until M8.2 testing confirms
+OPEN n, repeated sessions, EOF/disconnect behavior, and clean return to ABBS.

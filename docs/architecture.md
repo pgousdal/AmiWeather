@@ -138,6 +138,14 @@ it is not an ABBS implementation. No authoritative ABBS 3.3 door invocation
 or ABI documentation is present in this repository, so `adapter_abbs.c` is an
 explicit skeleton and M8.1 must obtain the real interface before integration.
 
+M8.1 supplies the thin documented ABBS Shell-door layer in
+`contrib/abbs/`. `AmiWeather.script` uses fixed paths, retrieves `FullName`
+and `NodeNr` through `C:get`, passes only bounded `--abbs-user` and
+`--abbs-node` arguments, and terminates with `EndCLI`. It does not use ARexx,
+Paragon behavior, private ABBS calls, or user-controlled command construction.
+The generic door remains independent of these arguments. No runtime ABBS
+qualification has been claimed; that is the M8.2 gate.
+
 The expanded report is 1172 bytes under the m68k ABI. The Amiga entry point
 uses Exec `StackSwap()` with a 32768-byte `AllocMem()` stack before calling
 `amiweather_gui_run()`, and restores the original stack before freeing it.

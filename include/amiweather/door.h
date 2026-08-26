@@ -18,6 +18,17 @@ struct AmiWeatherDoorAdapter {
     int (*return_to_bbs)(void *context);
 };
 
+#define AMIWEATHER_ABBS_USER_SIZE 64
+struct AmiWeatherAbbsContext {
+    char full_name[AMIWEATHER_ABBS_USER_SIZE];
+    long node_number;
+    int has_full_name;
+    int has_node_number;
+};
+
+int amiweather_abbs_parse_args(int argc, char **argv,
+                               struct AmiWeatherAbbsContext *context);
+
 enum AmiWeatherDoorCommand {
     AMIWEATHER_DOOR_COMMAND_NONE = 0,
     AMIWEATHER_DOOR_COMMAND_HOURLY,

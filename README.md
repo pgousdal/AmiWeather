@@ -42,6 +42,15 @@ The Amiga build produces both `build/amiga/AmiWeather` and
 `build/amiga/AmiWeatherDoor`. The door uses no Intuition or GadTools and is
 intended for a documented BBS adapter in M8.1.
 
+## ABBS 3.3 door integration
+
+`contrib/abbs/` contains an ABBS 3.3 Shell-door script and example
+Node0Config/Node0Menu entries. Copy `AmiWeatherDoor` and the script to a fixed
+ABBS drawer, add the `S` configuration entry, and use `OPEN n` from ABBS. The
+script obtains the documented `FullName` and `NodeNr` values with `C:get`,
+passes bounded context arguments, and always runs `EndCLI`. Runtime ABBS
+qualification remains an M8.2 task.
+
 `AMIAPI_DIR` defaults to `../AmiAPI`. The build checks for its public headers
 and `build/libamiapi.a` and gives a direct error if either is absent. It never
 copies or rebuilds AmiAPI.

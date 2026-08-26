@@ -8,7 +8,7 @@ CFLAGS ?= -O2 -Wall -Wextra -pedantic
 CPPFLAGS += -Iinclude -I$(AMIAPI_INCLUDE)
 COMMON_SRC := src/weather.c src/preferences.c src/openmeteo.c
 COMMON_OBJ := $(patsubst src/%.c,$(BUILD)/%.o,$(COMMON_SRC))
-DOOR_OBJ := $(BUILD)/door/door.o
+DOOR_OBJ := $(BUILD)/door/door.o $(BUILD)/door/adapter_abbs.o
 
 ifeq ($(PLATFORM),posix)
 CC ?= cc

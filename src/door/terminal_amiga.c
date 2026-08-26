@@ -25,14 +25,23 @@ static int amiga_connected(void *context)
     return 1;
 }
 
-int amiweather_door_amiga_run(void)
+int amiweather_door_amiga_run(int argc, char **argv)
 {
     struct AmiWeatherDoorTerminal terminal;
+    struct AmiWeatherAbbsContext context;
     terminal.context = NULL;
     terminal.write = amiga_write;
     terminal.read_key = amiga_read_key;
     terminal.connected = amiga_connected;
     terminal.width = 80;
-    amiweather_door_write(&terminal, "AmiWeatherDoor foundation\nRun via a BBS adapter in M8.1.\n");
+    if (!amiweather_abbs_parse_args(argc, argv, &context))
+        return 20;
+    amiweather_door_write(&terminal, "AmiWeatherDoor\n===============\n");
+    if (context.has_full_name) {
+        amiweather_door_write(&terminal, "Welcome, ");
+        amiweather_door_write(&terminal, context.full_name);
+        amiweather_door_write(&terminal, "\n");
+    }
+    amiweather_door_write(&terminal, "ABBS Shell-door foundation; weather session wiring follows in M8.2.\n");
     return 0;
 }

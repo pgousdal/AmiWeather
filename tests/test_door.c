@@ -18,4 +18,16 @@ static void test_render(void)
     CHECK(amiweather_door_render_home(&terminal,&location,&report)); CHECK(strstr(sink.data,"-2.5")!=NULL); CHECK(strstr(sink.data,"Unknown")!=NULL); CHECK(strstr(sink.data,"Forecast")!=NULL);
     CHECK(amiweather_door_command('7') == AMIWEATHER_DOOR_COMMAND_SEVEN_DAY); CHECK(amiweather_door_command('q') == AMIWEATHER_DOOR_COMMAND_QUIT);
 }
-int main(void) { test_render(); if (failures) return 1; puts("AmiWeather door tests passed"); return 0; }
+static void test_abbs_args(void)
+{
+    struct AmiWeatherAbbsContext context; char *valid[] = {"door", "--abbs-user", "Joe User", "--abbs-node", "2"};
+    char *bad[] = {"door", "--abbs-user", "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"};
+    CHECK(amiweather_abbs_parse_args(5, valid, &context));
+    CHECK(context.has_full_name && strcmp(context.full_name, "Joe User") == 0);
+    CHECK(context.has_node_number && context.node_number == 2);
+    CHECK(amiweather_abbs_parse_args(1, valid, &context));
+    CHECK(!context.has_full_name && !context.has_node_number);
+    CHECK(!amiweather_abbs_parse_args(3, bad, &context));
+    CHECK(!amiweather_abbs_parse_args(4, (char *[]){"door", "--abbs-node", "-1", "x"}, &context));
+}
+int main(void) { test_render(); test_abbs_args(); if (failures) return 1; puts("AmiWeather door tests passed"); return 0; }
