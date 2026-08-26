@@ -104,10 +104,15 @@ The Preferences window uses GadTools cycle gadgets for Celsius/Fahrenheit and
 km/h/mph. Open-Meteo receives both selected unit parameters in the same query,
 so current, daily, and hourly temperatures share a unit. Changes use fetch-candidate,
 publish-preferences, then commit report and preferences. Any failure leaves the
-old display and settings coherent. Secondary actions remain buttons: a menu bar
-would add menu lifecycle and event scope without enough benefit to justify
-destabilizing the existing compact UI in M5. Hourly therefore adds one compact
-button rather than making menu work dominate the milestone.
+old display and settings coherent. M6.1 adds a native GadTools menu strip. The
+main window retains only Refresh, Change..., and Hourly... buttons; Locations
+and Preferences are menu actions. Project provides Refresh, About..., and Quit;
+Location provides Change... and Saved Locations...; Forecast provides Hourly...;
+Settings provides Preferences.... Menu items carry GadTools user data and
+dispatch through the same operation flags as gadget events. The menu strip is
+detached before being freed during every cleanup path.
+
+About is a synchronous native EasyRequest requester and requires no network.
 
 ## Hourly selection and presentation
 
@@ -159,10 +164,9 @@ graphics primitives; no bitmap files, datatypes, PNG/JPEG libraries, or runtime
 allocation are involved. The current block and daily rows show icons where
 they improve hierarchy. Hourly remains text-first in its compact listview.
 
-The main window retains native buttons for Refresh, Change, Locations,
-Preferences, and Hourly. A menu bar and About requester remain deferred: the
-existing compact button layout is stable, and adding menu ownership/keyboard
-dispatch would increase M6 risk without improving the 640-pixel layout enough.
+The main window retains native buttons for Refresh, Change, and Hourly. The
+native menu bar provides secondary actions and About without enlarging the
+compact content area.
 
 The project version is 0.1.0 and is defined in the AmiWeather public weather
 header. `LICENSE` contains the MIT license naming Per Gustav Ousdal. `make

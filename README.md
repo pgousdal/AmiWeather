@@ -79,6 +79,11 @@ launch, and Refresh can temporarily block GUI interaction until the request
 completes or AmiAPI's finite 20-second network
 timeout expires. Background/asynchronous requests may be evaluated later.
 
+The main window keeps Refresh, Change..., and Hourly... as visible frequent
+actions. Locations and Preferences are available from the native menu bar.
+Project also contains About... and Quit; Location contains Change... and Saved
+Locations..., Forecast contains Hourly..., and Settings contains Preferences....
+
 The POSIX reference executable accepts `--preferences PATH` followed by an
 optional place query. It never reads the developer's home directory. It selects the
 first result for smoke testing, and prints its current weather and forecast. It remains a

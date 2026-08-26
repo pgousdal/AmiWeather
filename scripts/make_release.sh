@@ -36,9 +36,10 @@ Copy AmiWeather to any drawer and run it from Workbench or Shell. No icon or
 tooltypes are required.
 
 Usage:
-Use Change... to search, Locations to save/use/remove/default places,
-Preferences to select units, Hourly... for the next twelve hours, and Refresh
-to update all weather sections.
+Use the Project, Location, Forecast, and Settings menus for secondary actions.
+Change... searches; Saved Locations... saves/uses/removes/defaults places;
+Preferences... selects units; Hourly... shows the next twelve hours; and
+Refresh updates all weather sections.
 
 Network requirements:
 A working bsdsocket.library-compatible TCP/IP stack, DNS access, and AmiSSL 5

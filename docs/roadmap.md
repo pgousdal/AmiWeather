@@ -19,6 +19,9 @@
 - **M6 — Visual Polish, Weather Icons, and Aminet Packaging (complete):**
   restrained compiled-in icons, improved hierarchy, version 0.1.0, MIT license,
   and reproducible LHA packaging with executable/archive checksums.
+- **M6.1 — Native Menus and About (complete):** native Project, Location,
+  Forecast, and Settings menus, a compact About requester, and a reduced
+  three-button primary action row.
 - **M7 — Release Hardening / Aminet 0.1.0:** final manual QA and upload
   preparation; no further feature development is planned here.
 

@@ -74,8 +74,6 @@ struct WindowLayout {
     WORD gadget_width;
     WORD gadget_height;
     WORD change_left;
-    WORD locations_left;
-    WORD preferences_left;
     WORD hourly_left;
 };
 
@@ -99,11 +97,67 @@ static void calculate_layout(const struct Screen *screen,
         ? desired_height : available_height;
     layout->gadget_left = layout->left;
     layout->change_left = layout->left + layout->gadget_width + 8;
-    layout->locations_left = layout->change_left + layout->gadget_width + 8;
-    layout->preferences_left = layout->locations_left + layout->gadget_width + 8;
-    layout->hourly_left = layout->preferences_left + layout->gadget_width + 8;
+    layout->hourly_left = layout->change_left + layout->gadget_width + 8;
     layout->gadget_top = layout->height - screen->WBorBottom -
                          layout->gadget_height - 6;
+}
+
+enum MenuAction {
+    MENU_REFRESH = 1,
+    MENU_ABOUT,
+    MENU_QUIT,
+    MENU_CHANGE,
+    MENU_LOCATIONS,
+    MENU_HOURLY,
+    MENU_PREFERENCES
+};
+
+static struct Menu *create_application_menus(APTR visual_info)
+{
+    static const struct NewMenu definitions[] = {
+        { NM_TITLE, (CONST_STRPTR)"Project", NULL, 0, 0, NULL },
+        { NM_ITEM, (CONST_STRPTR)"Refresh", (CONST_STRPTR)"R", 0, 0,
+          (APTR)MENU_REFRESH },
+        { NM_ITEM, (CONST_STRPTR)"About...", (CONST_STRPTR)"A", 0, 0,
+          (APTR)MENU_ABOUT },
+        { NM_ITEM, NM_BARLABEL, NULL, 0, 0, NULL },
+        { NM_ITEM, (CONST_STRPTR)"Quit", (CONST_STRPTR)"Q", 0, 0,
+          (APTR)MENU_QUIT },
+        { NM_TITLE, (CONST_STRPTR)"Location", NULL, 0, 0, NULL },
+        { NM_ITEM, (CONST_STRPTR)"Change...", (CONST_STRPTR)"C", 0, 0,
+          (APTR)MENU_CHANGE },
+        { NM_ITEM, (CONST_STRPTR)"Saved Locations...", (CONST_STRPTR)"L", 0, 0,
+          (APTR)MENU_LOCATIONS },
+        { NM_TITLE, (CONST_STRPTR)"Forecast", NULL, 0, 0, NULL },
+        { NM_ITEM, (CONST_STRPTR)"Hourly...", (CONST_STRPTR)"H", 0, 0,
+          (APTR)MENU_HOURLY },
+        { NM_TITLE, (CONST_STRPTR)"Settings", NULL, 0, 0, NULL },
+        { NM_ITEM, (CONST_STRPTR)"Preferences...", (CONST_STRPTR)"P", 0, 0,
+          (APTR)MENU_PREFERENCES },
+        { NM_END, NULL, NULL, 0, 0, NULL }
+    };
+    struct Menu *menus = CreateMenus(definitions, TAG_DONE);
+    if (!menus || !LayoutMenus(menus, visual_info, TAG_DONE)) {
+        if (menus) FreeMenus(menus);
+        return NULL;
+    }
+    return menus;
+}
+
+static void show_about(struct Window *parent)
+{
+    struct EasyStruct about;
+    char text[320];
+    snprintf(text, sizeof(text),
+             "AmiWeather %s\\n\\nNative weather client for AmigaOS\\n\\n"
+             "Weather data: Open-Meteo\\nHTTP/API support: AmiAPI\\n"
+             "HTTPS: AmiSSL\\n\\nCopyright (c) 2026 Per Gustav Ousdal\\n"
+             "Licensed under the MIT License", AMIWEATHER_VERSION);
+    about.es_Flags = 0;
+    about.es_Title = (UBYTE *)"About AmiWeather";
+    about.es_TextFormat = (UBYTE *)text;
+    about.es_GadgetFormat = (UBYTE *)"OK";
+    EasyRequest(parent, &about, NULL);
 }
 
 static void draw_clipped(struct RastPort *rp, WORD x, WORD y,
@@ -937,6 +991,8 @@ int amiweather_gui_run(void)
     BOOL locations_requested;
     BOOL preferences_requested;
     BOOL hourly_requested;
+    struct Menu *menus = NULL;
+    enum MenuAction menu_action;
     enum AmiWeatherPreferencesError preferences_load_result;
     char window_title[32];
     int result = 20;
@@ -966,6 +1022,9 @@ int amiweather_gui_run(void)
     if (!visual_info)
         goto cleanup;
     calculate_layout(screen, &layout);
+    menus = create_application_menus(visual_info);
+    if (!menus)
+        goto cleanup;
 
     gadget = CreateContext(&gadgets);
     if (!gadget)
@@ -984,25 +1043,9 @@ int amiweather_gui_run(void)
     if (!gadget)
         goto cleanup;
     memset(&ng, 0, sizeof(ng));
-    ng.ng_LeftEdge = layout.locations_left; ng.ng_TopEdge = layout.gadget_top;
-    ng.ng_Width = layout.gadget_width; ng.ng_Height = layout.gadget_height;
-    ng.ng_GadgetText = (CONST_STRPTR)"_Locations"; ng.ng_GadgetID = GID_LOCATIONS;
-    ng.ng_VisualInfo = visual_info; ng.ng_TextAttr = screen->Font;
-    gadget = CreateGadget(BUTTON_KIND, gadget, &ng,
-                          GT_Underscore, (ULONG)'_', TAG_DONE);
-    if (!gadget) goto cleanup;
-    memset(&ng, 0, sizeof(ng));
     ng.ng_LeftEdge = layout.hourly_left; ng.ng_TopEdge = layout.gadget_top;
     ng.ng_Width = layout.gadget_width; ng.ng_Height = layout.gadget_height;
     ng.ng_GadgetText = (CONST_STRPTR)"_Hourly..."; ng.ng_GadgetID = GID_HOURLY;
-    ng.ng_VisualInfo = visual_info; ng.ng_TextAttr = screen->Font;
-    gadget = CreateGadget(BUTTON_KIND, gadget, &ng,
-                          GT_Underscore, (ULONG)'_', TAG_DONE);
-    if (!gadget) goto cleanup;
-    memset(&ng, 0, sizeof(ng));
-    ng.ng_LeftEdge = layout.preferences_left; ng.ng_TopEdge = layout.gadget_top;
-    ng.ng_Width = layout.gadget_width; ng.ng_Height = layout.gadget_height;
-    ng.ng_GadgetText = (CONST_STRPTR)"_Prefs..."; ng.ng_GadgetID = GID_PREFERENCES;
     ng.ng_VisualInfo = visual_info; ng.ng_TextAttr = screen->Font;
     gadget = CreateGadget(BUTTON_KIND, gadget, &ng,
                           GT_Underscore, (ULONG)'_', TAG_DONE);
@@ -1032,10 +1075,11 @@ int amiweather_gui_run(void)
         WA_Activate, TRUE,
         WA_Gadgets, (ULONG)gadgets,
         WA_IDCMP, IDCMP_CLOSEWINDOW | IDCMP_GADGETUP |
-                  IDCMP_REFRESHWINDOW | IDCMP_VANILLAKEY,
+                  IDCMP_REFRESHWINDOW | IDCMP_VANILLAKEY | IDCMP_MENUPICK,
         TAG_DONE);
     if (!window)
         goto cleanup;
+    SetMenuStrip(window, menus);
 
     layout.left = window->BorderLeft + 12;
     layout.content_top = window->BorderTop + window->RPort->TxHeight + 6;
@@ -1056,8 +1100,28 @@ int amiweather_gui_run(void)
             locations_requested = FALSE;
             preferences_requested = FALSE;
             hourly_requested = FALSE;
+            menu_action = 0;
             if (class == IDCMP_CLOSEWINDOW)
                 running = FALSE;
+            else if (class == IDCMP_MENUPICK) {
+                struct MenuItem *item = ItemAddress(menus, code);
+                if (item)
+                    menu_action = (enum MenuAction)(ULONG)GTMENUITEM_USERDATA(item);
+                if (menu_action == MENU_QUIT)
+                    running = FALSE;
+                else if (menu_action == MENU_REFRESH)
+                    refresh_requested = TRUE;
+                else if (menu_action == MENU_ABOUT)
+                    show_about(window);
+                else if (menu_action == MENU_CHANGE)
+                    change_requested = TRUE;
+                else if (menu_action == MENU_LOCATIONS)
+                    locations_requested = TRUE;
+                else if (menu_action == MENU_HOURLY)
+                    hourly_requested = TRUE;
+                else if (menu_action == MENU_PREFERENCES)
+                    preferences_requested = TRUE;
+            }
             else if (class == IDCMP_GADGETUP &&
                      ((struct Gadget *)message->IAddress)->GadgetID == GID_REFRESH)
                 refresh_requested = TRUE;
@@ -1167,8 +1231,12 @@ int amiweather_gui_run(void)
     result = 0;
 
 cleanup:
+    if (window && menus)
+        ClearMenuStrip(window);
     if (window)
         CloseWindow(window);
+    if (menus)
+        FreeMenus(menus);
     if (gadgets)
         FreeGadgets(gadgets);
     if (visual_info)

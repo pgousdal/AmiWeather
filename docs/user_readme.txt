@@ -16,10 +16,11 @@ DNS access, and AmiSSL 5 for HTTPS. AmiTCP_NG is tested but not mandatory.
 
 Locations and preferences
 -------------------------
-Change... searches for a place. Locations can save up to eight places, use a
-saved place without geocoding, remove entries, and choose the startup default.
-Preferences selects Celsius/Fahrenheit and km/h/mph. Changes are fetched and
-saved before being applied.
+Change... searches for a place. The Location menu can save up to eight places,
+use a saved place without geocoding, remove entries, and choose the startup
+default. Settings > Preferences... selects Celsius/Fahrenheit and km/h/mph.
+Project > About... shows program and license information; Project > Quit exits.
+Changes are fetched and saved before being applied.
 
 Configuration is stored as versioned text in ENV:AmiWeather/preferences and
 ENVARC:AmiWeather/preferences. ENV: is preferred at startup; ENVARC: is the
