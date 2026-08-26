@@ -154,3 +154,23 @@ int amiweather_format_forecast_date(const char *iso_date,
     snprintf(buffer, size, "%s %02d", weekdays[weekday], day);
     return 1;
 }
+
+int amiweather_format_hourly_time(const char *iso_time,
+                                  char *buffer, size_t size)
+{
+    char date[AMIWEATHER_DATE_SIZE];
+    char compact_date[AMIWEATHER_COMPACT_DATE_SIZE];
+    int hour, minute;
+    if (!iso_time || !buffer || size < AMIWEATHER_COMPACT_TIME_SIZE ||
+        strlen(iso_time) != 16 || iso_time[10] != 'T' || iso_time[13] != ':')
+        return 0;
+    memcpy(date, iso_time, 10);
+    date[10] = '\0';
+    if (!amiweather_format_forecast_date(date, compact_date,
+                                         sizeof(compact_date)) ||
+        sscanf(iso_time + 11, "%2d:%2d", &hour, &minute) != 2 ||
+        hour < 0 || hour > 23 || minute < 0 || minute > 59)
+        return 0;
+    snprintf(buffer, size, "%02d:%02d", hour, minute);
+    return 1;
+}

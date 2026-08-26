@@ -305,11 +305,17 @@ struct AmiWeatherResult amiweather_openmeteo_parse_report(
     const struct AmiAPIJsonValue *maximums;
     const struct AmiAPIJsonValue *minimums;
     const struct AmiAPIJsonValue *precipitation;
+    const struct AmiAPIJsonValue *hourly;
+    const struct AmiAPIJsonValue *hourly_times;
+    const struct AmiAPIJsonValue *hourly_temperatures;
+    const struct AmiAPIJsonValue *hourly_codes;
+    const struct AmiAPIJsonValue *hourly_precipitation;
     struct AmiWeatherReport parsed;
     enum AmiAPIJsonError json_error;
     size_t offset = 0;
-    size_t count, i;
+    size_t count, i, hourly_count, hourly_start;
     int rc;
+    char previous_hourly_time[AMIWEATHER_HOURLY_TIME_SIZE];
 
     if (!json || !report)
         return result_make(AMIWEATHER_ERR_ARGUMENT, 0, "null parser argument");
@@ -350,6 +356,12 @@ struct AmiWeatherResult amiweather_openmeteo_parse_report(
         parsed.current.wind_speed_kmh < 0.0 || parsed.current.weather_code < 0 ||
         parsed.current.weather_code > 99 || !parsed.current.observation_time[0])
         goto invalid;
+    {
+        char compact_time[AMIWEATHER_COMPACT_TIME_SIZE];
+        if (!amiweather_format_hourly_time(parsed.current.observation_time,
+                                           compact_time, sizeof(compact_time)))
+            goto invalid;
+    }
 
     times = AmiAPI_JSONObjectGet(doc, daily, "time");
     codes = AmiAPI_JSONObjectGet(doc, daily, "weather_code");
@@ -385,8 +397,8 @@ struct AmiWeatherResult amiweather_openmeteo_parse_report(
             !json_array_number(doc, minimums, i, &day->temperature_min_c) ||
             !json_array_number(doc, maximums, i, &day->temperature_max_c) ||
             day->weather_code < 0 || day->weather_code > 99 ||
-            day->temperature_min_c < -150.0 || day->temperature_min_c > 100.0 ||
-            day->temperature_max_c < -150.0 || day->temperature_max_c > 100.0 ||
+            day->temperature_min_c < -200.0 || day->temperature_min_c > 250.0 ||
+            day->temperature_max_c < -200.0 || day->temperature_max_c > 250.0 ||
             day->temperature_min_c > day->temperature_max_c)
             goto invalid;
         if (!precipitation || i >= AmiAPI_JSONArraySize(precipitation))
@@ -401,17 +413,92 @@ struct AmiWeatherResult amiweather_openmeteo_parse_report(
         day->has_precipitation_probability = 1;
     }
     parsed.forecast.count = count;
+
+    hourly = AmiAPI_JSONObjectGet(doc, root, "hourly");
+    if (!hourly || AmiAPI_JSONType(hourly) != AMIAPI_JSON_OBJECT)
+        goto missing;
+    hourly_times = AmiAPI_JSONObjectGet(doc, hourly, "time");
+    hourly_temperatures = AmiAPI_JSONObjectGet(doc, hourly, "temperature_2m");
+    hourly_codes = AmiAPI_JSONObjectGet(doc, hourly, "weather_code");
+    hourly_precipitation = AmiAPI_JSONObjectGet(doc, hourly,
+                                                "precipitation_probability");
+    if (!hourly_times || !hourly_temperatures || !hourly_codes)
+        goto missing;
+    if (AmiAPI_JSONType(hourly_times) != AMIAPI_JSON_ARRAY ||
+        AmiAPI_JSONType(hourly_temperatures) != AMIAPI_JSON_ARRAY ||
+        AmiAPI_JSONType(hourly_codes) != AMIAPI_JSON_ARRAY ||
+        (hourly_precipitation &&
+         AmiAPI_JSONType(hourly_precipitation) != AMIAPI_JSON_ARRAY))
+        goto invalid;
+    hourly_count = AmiAPI_JSONArraySize(hourly_times);
+    if (hourly_count == 0 || AmiAPI_JSONArraySize(hourly_temperatures) != hourly_count ||
+        AmiAPI_JSONArraySize(hourly_codes) != hourly_count)
+        goto invalid;
+    hourly_start = hourly_count;
+    previous_hourly_time[0] = '\0';
+    for (i = 0; i < hourly_count; ++i) {
+        char timestamp[AMIWEATHER_HOURLY_TIME_SIZE];
+        char compact[AMIWEATHER_COMPACT_TIME_SIZE];
+        double temperature;
+        long weather_code;
+        if (!json_array_string(doc, hourly_times, i, timestamp, sizeof(timestamp)) ||
+            !amiweather_format_hourly_time(timestamp, compact, sizeof(compact)) ||
+            !json_array_number(doc, hourly_temperatures, i, &temperature) ||
+            !json_array_long(doc, hourly_codes, i, &weather_code) ||
+            temperature < -200.0 || temperature > 250.0 ||
+            weather_code < 0 || weather_code > 99)
+            goto invalid;
+        if (previous_hourly_time[0] && strcmp(timestamp, previous_hourly_time) <= 0)
+            goto invalid;
+        memcpy(previous_hourly_time, timestamp, sizeof(previous_hourly_time));
+        if (hourly_start == hourly_count &&
+            strncmp(timestamp, parsed.current.observation_time, 13) >= 0)
+            hourly_start = i;
+    }
+    if (hourly_start == hourly_count)
+        goto invalid;
+    for (i = hourly_start; i < hourly_count &&
+         parsed.hourly.count < AMIWEATHER_HOURLY_COUNT; ++i) {
+        struct AmiWeatherHourly *entry =
+            &parsed.hourly.entries[parsed.hourly.count];
+        const struct AmiAPIJsonValue *probability_value;
+        long probability;
+        char compact[AMIWEATHER_COMPACT_TIME_SIZE];
+        if (!json_array_string(doc, hourly_times, i, entry->time,
+                               sizeof(entry->time)) ||
+            !amiweather_format_hourly_time(entry->time, compact, sizeof(compact)) ||
+            !json_array_number(doc, hourly_temperatures, i, &entry->temperature) ||
+            !json_array_long(doc, hourly_codes, i, &entry->weather_code) ||
+            entry->temperature < -200.0 || entry->temperature > 250.0 ||
+            entry->weather_code < 0 || entry->weather_code > 99)
+            goto invalid;
+        if (hourly_precipitation &&
+            i < AmiAPI_JSONArraySize(hourly_precipitation)) {
+            probability_value = AmiAPI_JSONArrayGet(doc, hourly_precipitation, i);
+            if (!probability_value ||
+                AmiAPI_JSONType(probability_value) != AMIAPI_JSON_NULL) {
+                if (!json_array_long(doc, hourly_precipitation, i, &probability) ||
+                    probability < 0 || probability > 100)
+                    goto invalid;
+                entry->precipitation_probability = (int)probability;
+                entry->has_precipitation_probability = 1;
+            }
+        }
+        ++parsed.hourly.count;
+    }
+    if (parsed.hourly.count == 0)
+        goto invalid;
     *report = parsed;
     AmiAPI_JSONFree(doc);
     return result_make(AMIWEATHER_OK, 0, NULL);
 missing:
     AmiAPI_JSONFree(doc);
     return result_make(AMIWEATHER_ERR_MISSING_FIELD, 0,
-                       "required current or daily field is absent");
+                       "required current, daily, or hourly field is absent");
 invalid:
     AmiAPI_JSONFree(doc);
     return result_make(AMIWEATHER_ERR_INVALID_FIELD, 0,
-                       "invalid current or daily weather field");
+                       "invalid current, daily, or hourly weather field");
 }
 
 static struct AmiWeatherResult execute_query(struct AmiAPIQuery *query,
@@ -554,6 +641,7 @@ static struct AmiAPIQuery *report_query(
     ADD_REPORT("longitude", longitude);
     ADD_REPORT("current", "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m");
     ADD_REPORT("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max");
+    ADD_REPORT("hourly", "temperature_2m,weather_code,precipitation_probability");
     ADD_REPORT("temperature_unit", amiweather_temperature_unit_query(temperature_unit));
     ADD_REPORT("wind_speed_unit", amiweather_wind_unit_query(wind_unit));
     ADD_REPORT("timezone", timezone);

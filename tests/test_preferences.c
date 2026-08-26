@@ -184,6 +184,7 @@ static void test_query_units(void)
     CHECK(strstr(url, "temperature_unit=celsius") != NULL);
     CHECK(strstr(url, "wind_speed_unit=kmh") != NULL);
     CHECK(strstr(url, "current=") != NULL && strstr(url, "daily=") != NULL);
+    CHECK(strstr(url, "hourly=") != NULL);
     result = amiweather_openmeteo_report_url(&location,
         AMIWEATHER_TEMPERATURE_FAHRENHEIT, AMIWEATHER_WIND_MPH, url, sizeof(url));
     CHECK(result.error == AMIWEATHER_OK);

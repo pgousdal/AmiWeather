@@ -202,7 +202,10 @@ static struct AmiWeatherResult parse_daily_object(
         "{\"current\":{\"time\":\"2026-08-26T12:00\","
         "\"temperature_2m\":17.25,\"apparent_temperature\":16.5,"
         "\"relative_humidity_2m\":73,\"weather_code\":3,"
-        "\"wind_speed_10m\":12.75},\"daily\":%s}", daily);
+        "\"wind_speed_10m\":12.75},\"daily\":%s,"
+        "\"hourly\":{\"time\":[\"2026-08-26T12:00\"],"
+        "\"temperature_2m\":[17.25],\"weather_code\":[2],"
+        "\"precipitation_probability\":[0]}}", daily);
     CHECK(length > 0 && (size_t)length < sizeof(fixture));
     return amiweather_openmeteo_parse_report(fixture, (size_t)length, report);
 }
@@ -297,7 +300,7 @@ static void test_forecast_invalid_entries(void)
         "\"temperature_2m_max\":[2],\"temperature_2m_min\":[null]}",
         AMIWEATHER_ERR_INVALID_FIELD);
     expect_daily_error("{\"time\":[\"2026-08-26\"],\"weather_code\":[0],"
-        "\"temperature_2m_max\":[101],\"temperature_2m_min\":[1]}",
+        "\"temperature_2m_max\":[251],\"temperature_2m_min\":[1]}",
         AMIWEATHER_ERR_INVALID_FIELD);
     expect_daily_error("{\"time\":[\"2026-08-26\"],\"weather_code\":[0],"
         "\"temperature_2m_max\":[1],\"temperature_2m_min\":[2]}",
@@ -351,6 +354,128 @@ static void test_compact_descriptions(void)
     CHECK(strcmp(amiweather_wmo_compact_description(4), "Unknown") == 0);
 }
 
+static struct AmiWeatherResult parse_hourly_object(
+    const char *observation, const char *hourly, struct AmiWeatherReport *report)
+{
+    char fixture[8192];
+    int length = snprintf(fixture, sizeof(fixture),
+        "{\"current\":{\"time\":\"%s\",\"temperature_2m\":17.25,"
+        "\"apparent_temperature\":16.5,\"relative_humidity_2m\":73,"
+        "\"weather_code\":3,\"wind_speed_10m\":12.75},"
+        "\"daily\":{\"time\":[\"2026-08-26\"],\"weather_code\":[2],"
+        "\"temperature_2m_max\":[25.1],\"temperature_2m_min\":[17.2]},"
+        "\"hourly\":%s}", observation, hourly);
+    CHECK(length > 0 && (size_t)length < sizeof(fixture));
+    return amiweather_openmeteo_parse_report(fixture, (size_t)length, report);
+}
+
+static void expect_hourly_error(const char *hourly, enum AmiWeatherError error)
+{
+    struct AmiWeatherReport report;
+    struct AmiWeatherResult result = parse_hourly_object(
+        "2026-08-26T12:30", hourly, &report);
+    CHECK(result.error == error);
+}
+
+static void test_hourly_valid_selection_and_bound(void)
+{
+    static const char hourly[] = "{"
+        "\"time\":[\"2026-08-26T10:00\",\"2026-08-26T11:00\","
+        "\"2026-08-26T12:00\",\"2026-08-26T13:00\",\"2026-08-26T14:00\","
+        "\"2026-08-26T15:00\",\"2026-08-26T16:00\",\"2026-08-26T17:00\","
+        "\"2026-08-26T18:00\",\"2026-08-26T19:00\",\"2026-08-26T20:00\","
+        "\"2026-08-26T21:00\",\"2026-08-26T22:00\",\"2026-08-26T23:00\","
+        "\"2026-08-27T00:00\",\"2026-08-27T01:00\"],"
+        "\"temperature_2m\":[10,11,12.5,13,14,15,16,17,18,19,20,21,22,23,-1.5,1],"
+        "\"weather_code\":[0,1,2,3,4,45,48,51,53,55,61,63,65,80,81,99],"
+        "\"precipitation_probability\":[null,null,0,10,20,30,40,50,60,70,80,90,100,null,5,6]}";
+    struct AmiWeatherReport report;
+    struct AmiWeatherResult result = parse_hourly_object(
+        "2026-08-26T12:30", hourly, &report);
+    CHECK(result.error == AMIWEATHER_OK);
+    CHECK(report.hourly.count == AMIWEATHER_HOURLY_COUNT);
+    CHECK(strcmp(report.hourly.entries[0].time, "2026-08-26T12:00") == 0);
+    CHECK(strcmp(report.hourly.entries[11].time, "2026-08-26T23:00") == 0);
+    CHECK(fabs(report.hourly.entries[0].temperature - 12.5) < 0.001);
+    CHECK(report.hourly.entries[0].has_precipitation_probability);
+    CHECK(report.hourly.entries[0].precipitation_probability == 0);
+    CHECK(report.hourly.entries[10].precipitation_probability == 100);
+    CHECK(strcmp(amiweather_wmo_description(report.hourly.entries[2].weather_code),
+                 "Unknown") == 0);
+}
+
+static void test_hourly_fewer_optional_and_boundaries(void)
+{
+    struct AmiWeatherReport report;
+    struct AmiWeatherResult result;
+    result = parse_hourly_object("2026-12-31T23:30",
+        "{\"time\":[\"2026-12-31T22:00\",\"2026-12-31T23:00\",\"2027-01-01T00:00\"],"
+        "\"temperature_2m\":[-3,-2.5,-2],\"weather_code\":[0,1,2]}", &report);
+    CHECK(result.error == AMIWEATHER_OK);
+    CHECK(report.hourly.count == 2);
+    CHECK(strcmp(report.hourly.entries[1].time, "2027-01-01T00:00") == 0);
+    CHECK(!report.hourly.entries[0].has_precipitation_probability);
+    result = parse_hourly_object("2026-08-31T23:10",
+        "{\"time\":[\"2026-08-31T23:00\",\"2026-09-01T00:00\"],"
+        "\"temperature_2m\":[10,9],\"weather_code\":[0,1],"
+        "\"precipitation_probability\":[null,100]}", &report);
+    CHECK(result.error == AMIWEATHER_OK);
+    CHECK(!report.hourly.entries[0].has_precipitation_probability);
+    CHECK(report.hourly.entries[1].precipitation_probability == 100);
+}
+
+static void test_hourly_errors(void)
+{
+    expect_hourly_error("{\"time\":[],\"temperature_2m\":[],\"weather_code\":[]}",
+                        AMIWEATHER_ERR_INVALID_FIELD);
+    expect_hourly_error("{\"temperature_2m\":[1],\"weather_code\":[0]}",
+                        AMIWEATHER_ERR_MISSING_FIELD);
+    expect_hourly_error("{\"time\":[\"2026-08-26T12:00\"],\"weather_code\":[0]}",
+                        AMIWEATHER_ERR_MISSING_FIELD);
+    expect_hourly_error("{\"time\":[\"2026-08-26T12:00\"],\"temperature_2m\":[1]}",
+                        AMIWEATHER_ERR_MISSING_FIELD);
+    expect_hourly_error("{\"time\":[\"2026-08-26T12:00\",\"2026-08-26T13:00\"],"
+        "\"temperature_2m\":[1],\"weather_code\":[0,1]}", AMIWEATHER_ERR_INVALID_FIELD);
+    expect_hourly_error("{\"time\":[\"bad\"],\"temperature_2m\":[1],\"weather_code\":[0]}",
+                        AMIWEATHER_ERR_INVALID_FIELD);
+    expect_hourly_error("{\"time\":[\"2026-08-26T12:00\"],\"temperature_2m\":[null],\"weather_code\":[0]}",
+                        AMIWEATHER_ERR_INVALID_FIELD);
+    expect_hourly_error("{\"time\":[\"2026-08-26T12:00\"],\"temperature_2m\":[1],\"weather_code\":[100]}",
+                        AMIWEATHER_ERR_INVALID_FIELD);
+    expect_hourly_error("{\"time\":[\"2026-08-26T12:00\"],\"temperature_2m\":[1],\"weather_code\":[0],"
+        "\"precipitation_probability\":[-1]}", AMIWEATHER_ERR_INVALID_FIELD);
+    expect_hourly_error("{\"time\":[\"2026-08-26T12:00\"],\"temperature_2m\":[1],\"weather_code\":[0],"
+        "\"precipitation_probability\":[101]}", AMIWEATHER_ERR_INVALID_FIELD);
+}
+
+static void test_hourly_failure_is_atomic(void)
+{
+    struct AmiWeatherReport report;
+    struct AmiWeatherResult result;
+    memset(&report, 0, sizeof(report));
+    report.current.weather_code = 63;
+    report.forecast.count = 4;
+    report.hourly.count = 7;
+    result = parse_hourly_object("2026-08-26T12:30",
+        "{\"time\":[\"bad\"],\"temperature_2m\":[1],\"weather_code\":[0]}",
+        &report);
+    CHECK(result.error == AMIWEATHER_ERR_INVALID_FIELD);
+    CHECK(report.current.weather_code == 63);
+    CHECK(report.forecast.count == 4);
+    CHECK(report.hourly.count == 7);
+}
+
+static void test_hourly_time_formatting(void)
+{
+    char display[AMIWEATHER_COMPACT_TIME_SIZE];
+    CHECK(amiweather_format_hourly_time("2026-08-26T00:00", display, sizeof(display)));
+    CHECK(strcmp(display, "00:00") == 0);
+    CHECK(amiweather_format_hourly_time("2026-12-31T23:59", display, sizeof(display)));
+    CHECK(strcmp(display, "23:59") == 0);
+    CHECK(!amiweather_format_hourly_time("2026-02-30T12:00", display, sizeof(display)));
+    CHECK(!amiweather_format_hourly_time("2026-08-26T24:00", display, sizeof(display)));
+}
+
 int main(void)
 {
     test_wmo_descriptions();
@@ -371,6 +496,11 @@ int main(void)
     test_report_commit_is_atomic();
     test_forecast_date_formatting();
     test_compact_descriptions();
+    test_hourly_valid_selection_and_bound();
+    test_hourly_fewer_optional_and_boundaries();
+    test_hourly_errors();
+    test_hourly_failure_is_atomic();
+    test_hourly_time_formatting();
     if (failures) {
         fprintf(stderr, "%d test(s) failed\n", failures);
         return 1;

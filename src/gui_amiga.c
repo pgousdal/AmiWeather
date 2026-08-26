@@ -23,6 +23,7 @@
 #define GID_CHANGE 2
 #define GID_LOCATIONS 3
 #define GID_PREFERENCES 4
+#define GID_HOURLY 5
 #define GID_SEARCH_TEXT 10
 #define GID_SEARCH 11
 #define GID_RESULTS 12
@@ -75,6 +76,7 @@ struct WindowLayout {
     WORD change_left;
     WORD locations_left;
     WORD preferences_left;
+    WORD hourly_left;
 };
 
 static void calculate_layout(const struct Screen *screen,
@@ -99,6 +101,7 @@ static void calculate_layout(const struct Screen *screen,
     layout->change_left = layout->left + layout->gadget_width + 8;
     layout->locations_left = layout->change_left + layout->gadget_width + 8;
     layout->preferences_left = layout->locations_left + layout->gadget_width + 8;
+    layout->hourly_left = layout->preferences_left + layout->gadget_width + 8;
     layout->gadget_top = layout->height - screen->WBorBottom -
                          layout->gadget_height - 6;
 }
@@ -756,6 +759,112 @@ cleanup:
     return use_location;
 }
 
+static void hourly_window(struct Screen *screen, APTR visual_info,
+                          struct Window *parent,
+                          const struct ApplicationState *application)
+{
+    struct Window *window = NULL;
+    struct Gadget *gadgets = NULL, *gadget;
+    struct NewGadget ng;
+    struct List labels;
+    struct Node nodes[AMIWEATHER_HOURLY_COUNT];
+    char display[AMIWEATHER_HOURLY_COUNT][96];
+    char location_name[AMIWEATHER_LOCATION_DISPLAY_SIZE];
+    char title[AMIWEATHER_LOCATION_DISPLAY_SIZE + 32];
+    struct IntuiMessage *message;
+    WORD font_height = screen->Font ? screen->Font->ta_YSize : 8;
+    WORD width = screen->Width - 20 < 470 ? screen->Width - 20 : 470;
+    WORD height = screen->Height - 20 < 236 ? screen->Height - 20 : 236;
+    WORD top = screen->WBorTop + font_height + 8;
+    WORD button_height = font_height + 8;
+    BOOL running = TRUE;
+    size_t i;
+
+    if (!application->has_report || application->report.hourly.count == 0) {
+        struct AmiWeatherResult result;
+        result.error = AMIWEATHER_ERR_NOT_FOUND;
+        result.http_status = 0;
+        snprintf(result.diagnostic, sizeof(result.diagnostic),
+                 "%s", "No hourly forecast is available");
+        show_result_requester(parent, "Hourly forecast", &result);
+        return;
+    }
+    initialize_list(&labels);
+    for (i = 0; i < application->report.hourly.count; ++i) {
+        const struct AmiWeatherHourly *entry = &application->report.hourly.entries[i];
+        char time[AMIWEATHER_COMPACT_TIME_SIZE];
+        char temperature[24];
+        amiweather_format_hourly_time(entry->time, time, sizeof(time));
+        format_tenths(temperature, sizeof(temperature), entry->temperature);
+        if (entry->has_precipitation_probability)
+            snprintf(display[i], sizeof(display[i]),
+                     "%-5s  %-18s  %s \260%s  %3d%%",
+                     time, amiweather_wmo_compact_description(entry->weather_code),
+                     temperature,
+                     amiweather_temperature_unit_label(application->preferences.temperature_unit),
+                     entry->precipitation_probability);
+        else
+            snprintf(display[i], sizeof(display[i]),
+                     "%-5s  %-18s  %s \260%s",
+                     time, amiweather_wmo_compact_description(entry->weather_code),
+                     temperature,
+                     amiweather_temperature_unit_label(application->preferences.temperature_unit));
+        memset(&nodes[i], 0, sizeof(nodes[i]));
+        nodes[i].ln_Name = display[i];
+        AddTail(&labels, &nodes[i]);
+    }
+    amiweather_location_format(&application->location, location_name,
+                               sizeof(location_name));
+    snprintf(title, sizeof(title), "Hourly Forecast - %s", location_name);
+    gadget = CreateContext(&gadgets);
+    if (!gadget) goto cleanup;
+    memset(&ng, 0, sizeof(ng));
+    ng.ng_LeftEdge = 12; ng.ng_TopEdge = top;
+    ng.ng_Width = width - 24;
+    ng.ng_Height = height - top - button_height - screen->WBorBottom - 12;
+    ng.ng_GadgetID = GID_RESULTS; ng.ng_VisualInfo = visual_info;
+    ng.ng_TextAttr = screen->Font;
+    gadget = CreateGadget(LISTVIEW_KIND, gadget, &ng,
+                          GTLV_Labels, (ULONG)&labels, TAG_DONE);
+    if (!gadget) goto cleanup;
+    memset(&ng, 0, sizeof(ng));
+    ng.ng_LeftEdge = width - 92;
+    ng.ng_TopEdge = height - button_height - screen->WBorBottom - 5;
+    ng.ng_Width = 80; ng.ng_Height = button_height;
+    ng.ng_GadgetText = (CONST_STRPTR)"_Close";
+    ng.ng_GadgetID = GID_SAVED_CLOSE; ng.ng_VisualInfo = visual_info;
+    ng.ng_TextAttr = screen->Font;
+    gadget = CreateGadget(BUTTON_KIND, gadget, &ng,
+                          GT_Underscore, (ULONG)'_', TAG_DONE);
+    if (!gadget) goto cleanup;
+    window = OpenWindowTags(NULL, WA_Title, (ULONG)title,
+        WA_CustomScreen, (ULONG)screen, WA_Width, (ULONG)width,
+        WA_Height, (ULONG)height, WA_DragBar, TRUE, WA_DepthGadget, TRUE,
+        WA_CloseGadget, TRUE, WA_Activate, TRUE, WA_Gadgets, (ULONG)gadgets,
+        WA_IDCMP, IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_REFRESHWINDOW,
+        TAG_DONE);
+    if (!window) goto cleanup;
+    GT_RefreshWindow(window, NULL);
+    while (running) {
+        Wait(1UL << window->UserPort->mp_SigBit);
+        while ((message = GT_GetIMsg(window->UserPort)) != NULL) {
+            ULONG class = message->Class;
+            UWORD id = class == IDCMP_GADGETUP
+                ? ((struct Gadget *)message->IAddress)->GadgetID : 0;
+            GT_ReplyIMsg(message);
+            if (class == IDCMP_CLOSEWINDOW || id == GID_SAVED_CLOSE)
+                running = FALSE;
+            else if (class == IDCMP_REFRESHWINDOW) {
+                GT_BeginRefresh(window);
+                GT_EndRefresh(window, TRUE);
+            }
+        }
+    }
+cleanup:
+    if (window) CloseWindow(window);
+    if (gadgets) FreeGadgets(gadgets);
+}
+
 int amiweather_gui_run(void)
 {
     struct Screen *screen = NULL;
@@ -774,6 +883,7 @@ int amiweather_gui_run(void)
     BOOL change_requested;
     BOOL locations_requested;
     BOOL preferences_requested;
+    BOOL hourly_requested;
     enum AmiWeatherPreferencesError preferences_load_result;
     int result = 20;
 
@@ -822,6 +932,14 @@ int amiweather_gui_run(void)
     ng.ng_LeftEdge = layout.locations_left; ng.ng_TopEdge = layout.gadget_top;
     ng.ng_Width = layout.gadget_width; ng.ng_Height = layout.gadget_height;
     ng.ng_GadgetText = (CONST_STRPTR)"_Locations"; ng.ng_GadgetID = GID_LOCATIONS;
+    ng.ng_VisualInfo = visual_info; ng.ng_TextAttr = screen->Font;
+    gadget = CreateGadget(BUTTON_KIND, gadget, &ng,
+                          GT_Underscore, (ULONG)'_', TAG_DONE);
+    if (!gadget) goto cleanup;
+    memset(&ng, 0, sizeof(ng));
+    ng.ng_LeftEdge = layout.hourly_left; ng.ng_TopEdge = layout.gadget_top;
+    ng.ng_Width = layout.gadget_width; ng.ng_Height = layout.gadget_height;
+    ng.ng_GadgetText = (CONST_STRPTR)"_Hourly..."; ng.ng_GadgetID = GID_HOURLY;
     ng.ng_VisualInfo = visual_info; ng.ng_TextAttr = screen->Font;
     gadget = CreateGadget(BUTTON_KIND, gadget, &ng,
                           GT_Underscore, (ULONG)'_', TAG_DONE);
@@ -882,6 +1000,7 @@ int amiweather_gui_run(void)
             change_requested = FALSE;
             locations_requested = FALSE;
             preferences_requested = FALSE;
+            hourly_requested = FALSE;
             if (class == IDCMP_CLOSEWINDOW)
                 running = FALSE;
             else if (class == IDCMP_GADGETUP &&
@@ -896,6 +1015,9 @@ int amiweather_gui_run(void)
             else if (class == IDCMP_GADGETUP &&
                      ((struct Gadget *)message->IAddress)->GadgetID == GID_PREFERENCES)
                 preferences_requested = TRUE;
+            else if (class == IDCMP_GADGETUP &&
+                     ((struct Gadget *)message->IAddress)->GadgetID == GID_HOURLY)
+                hourly_requested = TRUE;
             else if (class == IDCMP_VANILLAKEY && (code == 'r' || code == 'R'))
                 refresh_requested = TRUE;
             else if (class == IDCMP_REFRESHWINDOW) {
@@ -983,6 +1105,8 @@ int amiweather_gui_run(void)
                     draw_content(window, &layout, &application);
                 }
             }
+            if (hourly_requested && running)
+                hourly_window(screen, visual_info, window, &application);
         }
     }
     result = 0;

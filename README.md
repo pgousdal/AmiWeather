@@ -2,8 +2,9 @@
 
 AmiWeather is a native weather application for classic AmigaOS. The primary
 target is AmigaOS 3.x on a 68020 or newer processor; no FPU or MMU is required.
-The current M4 build remains version 0.0.1. It provides persistent preferences,
-saved locations, current conditions, and a five-day forecast, while remaining an early build
+The current M5 build remains version 0.0.1. It provides persistent preferences,
+saved locations, current conditions, five daily rows, and a twelve-entry hourly
+forecast, while remaining an early build
 rather than a user-ready release.
 
 The Amiga interface uses Intuition and GadTools on the user's public screen.
@@ -53,16 +54,25 @@ timezone is available. A compact native table adds up to five daily rows with
 weekday/date, WMO condition, minimum and maximum temperatures, and
 precipitation probability when supplied and space permits. Current and daily
 data use one Open-Meteo request and are committed together. The GadTools
-**Refresh** button (or the `R` key) updates both. Loading and concise errors are
+**Refresh** button (or the `R` key) updates all three forecast sections. Loading and concise errors are
 shown without discarding the last successful display; Intuition exposure
 redraws only stored state and does not initiate network traffic.
+
+**Hourly...** opens a compact native GadTools list showing up to twelve local
+hours with time, compact WMO condition, temperature, and precipitation
+probability when available. The adapter selects the current forecast hour—the
+first validated hourly timestamp whose `YYYY-MM-DDTHH` is at or after the
+current observation hour—and then at most eleven following entries. This
+naturally crosses midnight, month, and year boundaries without POSIX date APIs.
+The listview scrolls when the screen font or height cannot show all rows.
 
 The Preferences window selects Celsius or Fahrenheit and km/h or mph. Unit
 changes fetch a complete current-plus-daily report and persist the candidate
 preferences before changing displayed state. A failed fetch or save leaves the
 old units and report intact. Amiga decimal rendering remains integer-based.
 
-Requests are synchronous in M4. Search, a selection's initial weather fetch,
+Requests are synchronous in M5. Current, daily, and hourly fields use one
+Open-Meteo response and commit together. Search, a selection's initial weather fetch,
 launch, and Refresh can temporarily block GUI interaction until the request
 completes or AmiAPI's finite 20-second network
 timeout expires. Background/asynchronous requests may be evaluated later.
@@ -94,5 +104,6 @@ file, rolls back on publication failure, and removes the backup after success.
 This is the safest portable strategy used because rename-over-existing behavior
 is not guaranteed across classic Amiga filesystems.
 
-Forecast storage is fixed at five application-owned entries. M4 has no hourly
-forecast, graphs, maps, custom icons, localization, or background refresh.
+Forecast storage is fixed at five daily and twelve hourly application-owned
+entries. M5 has no charts, maps, custom icons, localization, asynchronous
+networking, or background refresh.

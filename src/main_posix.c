@@ -76,5 +76,21 @@ int main(int argc, char **argv)
             putchar('\n');
         }
     }
+    puts("\nHourly:");
+    {
+        size_t i;
+        for (i = 0; i < report.hourly.count; ++i) {
+            const struct AmiWeatherHourly *entry = &report.hourly.entries[i];
+            char time[AMIWEATHER_COMPACT_TIME_SIZE];
+            amiweather_format_hourly_time(entry->time, time, sizeof(time));
+            printf("%s  %-20s  %.1f %s", time,
+                   amiweather_wmo_description(entry->weather_code),
+                   entry->temperature,
+                   amiweather_temperature_unit_label(preferences.temperature_unit));
+            if (entry->has_precipitation_probability)
+                printf("  %d%%", entry->precipitation_probability);
+            putchar('\n');
+        }
+    }
     return 0;
 }

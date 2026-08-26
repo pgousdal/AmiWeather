@@ -13,8 +13,8 @@ Intuition + GadTools UI
 ```
 
 The GUI consumes application-owned `AmiWeatherPreferences` and an
-`AmiWeatherReport`, containing current
-conditions and a fixed-capacity five-entry daily forecast, and a bounded
+`AmiWeatherReport`, containing current conditions, a fixed-capacity five-entry
+daily forecast, and a fixed-capacity twelve-entry hourly forecast, and a bounded
 `AmiWeatherLocation`, plus application-level result codes.
 Open-Meteo field names and AmiAPI JSON
 objects stay in the adapter. AmiAPI is an external SDK: AmiWeather includes
@@ -26,7 +26,7 @@ builder, bounds the response to 64 KiB, applies a 20-second network timeout,
 checks for a 2xx HTTP status, and parses the response with AmiAPI's public JSON
 API. All acquired network objects unwind through one cleanup path.
 
-M4 stores an in-memory selected location, initially the configured default or
+M5 stores an in-memory selected location, initially the configured default or
 Oslo. Geocoding requests
 up to eight English-labelled results and requires a nonempty name plus valid
 coordinates; region, country, country code, and timezone are optional. Weather
@@ -40,15 +40,17 @@ five server entries are safely bounded. Optional precipitation entries may be
 absent or null; present values must be in the range 0 through 100.
 
 The GUI models loading, valid-weather, and error presentation explicitly. A
-response is parsed into a temporary report and current plus forecast are
-committed atomically only after complete validation. Failed Refresh retains and
+response is parsed into a temporary report and current, daily, plus hourly
+forecasts are committed atomically only after complete validation. Required
+hourly arrays are nonempty, equal length, strictly ordered, and fully validated.
+Failed Refresh retains and
 continues displaying the last successful report with concise status. A failed
 candidate fetch retains the prior location and report. The GUI stores only
 AmiWeather domain values and application-level results. Launch,
 search, selection, and explicit Refresh actions call the synchronous adapter;
 repainting reads the
 stored state and never performs network I/O. A request can therefore block GUI
-interaction until completion or timeout in M4. Background execution remains a
+interaction until completion or timeout in M5. Background execution remains a
 later design question rather than premature infrastructure.
 
 ## Native UI direction
@@ -100,11 +102,32 @@ chooses the first remaining entry, while an empty list falls back to Oslo.
 
 The Preferences window uses GadTools cycle gadgets for Celsius/Fahrenheit and
 km/h/mph. Open-Meteo receives both selected unit parameters in the same query,
-so current and daily temperatures share a unit. Changes use fetch-candidate,
+so current, daily, and hourly temperatures share a unit. Changes use fetch-candidate,
 publish-preferences, then commit report and preferences. Any failure leaves the
 old display and settings coherent. Secondary actions remain buttons: a menu bar
 would add menu lifecycle and event scope without enough benefit to justify
-destabilizing the existing compact UI in M4.
+destabilizing the existing compact UI in M5. Hourly therefore adds one compact
+button rather than making menu work dominate the milestone.
+
+## Hourly selection and presentation
+
+Open-Meteo receives `hourly=temperature_2m,weather_code,precipitation_probability`
+in the same timezone-aware and unit-aware request as current and daily weather.
+The parser locates the first timestamp whose fixed-width local
+`YYYY-MM-DDTHH` is at or after the validated observation hour, then copies it
+and up to eleven successors. The partly elapsed current hour is included. ISO
+ordering handles midnight, month, and year transitions without a platform date
+library.
+
+The modal Hourly window is a GadTools listview with fixed-lifetime nodes and
+strings plus a Close gadget. It shows local `HH:MM`, the shared compact WMO
+description, integer-formatted decimal temperature in the selected unit, and
+precipitation only when available. At 640x256 a standard font can show twelve
+rows; larger fonts or shorter areas use native vertical scrolling. Opening,
+exposure, and closing use only stored report data. The existing modal
+secondary-window architecture serializes Hourly interaction with Refresh and
+location changes; reopening always reflects the latest atomic report without a
+second concurrent IDCMP lifetime.
 
 ## Preference persistence
 
@@ -127,6 +150,6 @@ This avoids exposing a partially written open file without assuming atomic
 rename-over-existing behavior on every classic Amiga filesystem.
 
 Geocoding text remains validated UTF-8. Classic Amiga fonts generally do not
-render Unicode and clipping is byte-oriented, so M4 documents imperfect
+render Unicode and clipping is byte-oriented, so M5 documents imperfect
 non-Latin display rather than adding a large conversion framework. Memory
 safety, coordinates, and request queries are unaffected.

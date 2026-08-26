@@ -14,8 +14,10 @@
 - **M4 — Preferences and Saved Locations (complete):** versioned ENV:/ENVARC:
   persistence, eight bounded saved locations, startup default selection, and
   Celsius/Fahrenheit plus km/h/mph preferences.
-- **M5 — Hourly Forecast:** add a compact bounded hourly outlook without
-  background refresh or dashboard-style presentation.
+- **M5 — Hourly Forecast (complete):** twelve bounded next-hour entries in the
+  atomic current/daily report and a compact scrollable native hourly window.
+- **M6 — Visual Polish and Weather Icons:** improve restrained presentation and
+  add suitable classic-Amiga weather artwork without a dashboard redesign.
 
 Each milestone should remain independently testable and avoid prematurely
 introducing background or elaborate UI infrastructure.

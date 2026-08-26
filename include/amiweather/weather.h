@@ -8,6 +8,9 @@
 #define AMIWEATHER_FORECAST_DAYS 5
 #define AMIWEATHER_DATE_SIZE 11
 #define AMIWEATHER_COMPACT_DATE_SIZE 7
+#define AMIWEATHER_HOURLY_COUNT 12
+#define AMIWEATHER_HOURLY_TIME_SIZE 17
+#define AMIWEATHER_COMPACT_TIME_SIZE 6
 
 struct AmiWeatherCurrent {
     double temperature_c;
@@ -32,9 +35,23 @@ struct AmiWeatherForecast {
     size_t count;
 };
 
+struct AmiWeatherHourly {
+    char time[AMIWEATHER_HOURLY_TIME_SIZE];
+    double temperature;
+    long weather_code;
+    int precipitation_probability;
+    int has_precipitation_probability;
+};
+
+struct AmiWeatherHourlyForecast {
+    struct AmiWeatherHourly entries[AMIWEATHER_HOURLY_COUNT];
+    size_t count;
+};
+
 struct AmiWeatherReport {
     struct AmiWeatherCurrent current;
     struct AmiWeatherForecast forecast;
+    struct AmiWeatherHourlyForecast hourly;
     enum AmiWeatherTemperatureUnit temperature_unit;
     enum AmiWeatherWindUnit wind_unit;
 };
@@ -62,5 +79,7 @@ const char *amiweather_wmo_description(long weather_code);
 const char *amiweather_wmo_compact_description(long weather_code);
 int amiweather_format_forecast_date(const char *iso_date,
                                     char *buffer, size_t size);
+int amiweather_format_hourly_time(const char *iso_time,
+                                  char *buffer, size_t size);
 
 #endif
