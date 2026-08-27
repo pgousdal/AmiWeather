@@ -7,13 +7,14 @@ AmigaOS 3.1 FS-UAE system. Record the tested binary hashes and observations.
 
 Real FS-UAE testing has confirmed:
 
-- M9ARexx and GetWeather returned RC 0 for VERSION, STATUS, GET LOCATION,
-  GET TEMPERATURE, GET CONDITION, GET HUMIDITY, and GET WIND. GetWeather
-  returned live Tonstad, Agder, Norway data.
+- M9ARexx returned RC 0 for VERSION, STATUS, GET LOCATION, GET TEMPERATURE,
+  GET CONDITION, GET HUMIDITY, and GET WIND.
+- GetWeather returned RC 0 for GET LOCATION, GET TEMPERATURE, GET CONDITION,
+  GET HUMIDITY, and GET WIND, with live Tonstad, Agder, Norway data.
 - `SetLocation.rexx "Tonstad"` returned LOCATION RC 0 and RESULT
   `Tonstad, Agder, Norway`. It changed the active location and explicitly did
   not save preferences.
-- Ambiguous Reykjavik, Oslo, Manila, and New York searches returned RC 14.
+- Ambiguous Reykjavik, Oslo, and New York searches returned RC 14.
   This is the required no-guessing behavior.
 - Unresolved Port-Aux-Francais and Longyearbyen searches returned the
   controlled location/geocoding failure RC 15.
