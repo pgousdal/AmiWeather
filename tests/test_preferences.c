@@ -253,6 +253,78 @@ static void test_resolution_and_persistent_save(void)
     remove(env_path); remove(archive_path);
 }
 
+static void test_resolution_matrix_and_failures(void)
+{
+    char env_path[128], archive_path[128];
+    struct AmiWeatherPreferences env, archive, loaded;
+    struct AmiWeatherLocation first = location_make("First", 58.0, 8.0);
+    struct AmiWeatherLocation second = location_make("Second", 59.0, 9.0);
+    snprintf(env_path, sizeof(env_path), "/tmp/amiweather-matrix-env-%ld", (long)getpid());
+    snprintf(archive_path, sizeof(archive_path), "/tmp/amiweather-matrix-envarc-%ld", (long)getpid());
+    remove(env_path); remove(archive_path);
+    amiweather_preferences_default(&env);
+    amiweather_preferences_default(&archive);
+    CHECK(amiweather_preferences_set_default_location(&env, &first) == AMIWEATHER_PREFS_OK);
+    CHECK(amiweather_preferences_set_default_location(&archive, &second) == AMIWEATHER_PREFS_OK);
+    env.temperature_unit = AMIWEATHER_TEMPERATURE_FAHRENHEIT;
+    archive.wind_unit = AMIWEATHER_WIND_MPH;
+
+    CHECK(amiweather_preferences_save_file(env_path, &env) == AMIWEATHER_PREFS_OK);
+    CHECK(amiweather_preferences_load_resolved(env_path, archive_path, &loaded) == AMIWEATHER_PREFS_OK);
+    CHECK(strcmp(loaded.saved_locations[loaded.default_location_index].name, "First") == 0);
+    remove(env_path);
+
+    CHECK(amiweather_preferences_save_file(archive_path, &archive) == AMIWEATHER_PREFS_OK);
+    CHECK(amiweather_preferences_load_resolved(env_path, archive_path, &loaded) == AMIWEATHER_PREFS_OK);
+    CHECK(strcmp(loaded.saved_locations[loaded.default_location_index].name, "Second") == 0);
+
+    CHECK(amiweather_preferences_save_file(env_path, &env) == AMIWEATHER_PREFS_OK);
+    CHECK(amiweather_preferences_load_resolved(env_path, archive_path, &loaded) == AMIWEATHER_PREFS_OK);
+    CHECK(strcmp(loaded.saved_locations[loaded.default_location_index].name, "First") == 0);
+    CHECK(loaded.temperature_unit == AMIWEATHER_TEMPERATURE_FAHRENHEIT);
+
+    {
+        FILE *file = fopen(env_path, "wb");
+        CHECK(file != NULL);
+        if (file) { CHECK(fputs("invalid\n", file) >= 0); CHECK(fclose(file) == 0); }
+    }
+    CHECK(amiweather_preferences_load_resolved(env_path, archive_path, &loaded) == AMIWEATHER_PREFS_OK);
+    CHECK(strcmp(loaded.saved_locations[loaded.default_location_index].name, "Second") == 0);
+    CHECK(loaded.wind_unit == AMIWEATHER_WIND_MPH);
+
+    CHECK(amiweather_preferences_save_persistent(archive_path, env_path, &env) == AMIWEATHER_PREFS_OK);
+    CHECK(amiweather_preferences_load_file(archive_path, &loaded) == AMIWEATHER_PREFS_OK);
+    CHECK(loaded.temperature_unit == AMIWEATHER_TEMPERATURE_FAHRENHEIT);
+    CHECK(amiweather_preferences_load_file(env_path, &loaded) == AMIWEATHER_PREFS_OK);
+    CHECK(loaded.temperature_unit == AMIWEATHER_TEMPERATURE_FAHRENHEIT);
+
+    archive = env;
+    archive.wind_unit = AMIWEATHER_WIND_MPH;
+    CHECK(amiweather_preferences_save_persistent(
+          "/tmp/amiweather-prefs-impossible/preferences", env_path, &archive) ==
+          AMIWEATHER_PREFS_IO_ERROR);
+    CHECK(amiweather_preferences_load_file(env_path, &loaded) == AMIWEATHER_PREFS_OK);
+    CHECK(loaded.wind_unit == AMIWEATHER_WIND_KMH);
+    remove(env_path); remove(archive_path);
+}
+
+static void test_default_location_change(void)
+{
+    struct AmiWeatherPreferences preferences;
+    struct AmiWeatherLocation first = location_make("First", 58.0, 8.0);
+    struct AmiWeatherLocation second = location_make("Second", 59.0, 9.0);
+    amiweather_preferences_default(&preferences);
+    CHECK(!preferences.has_default_location);
+    CHECK(amiweather_preferences_set_default_location(&preferences, &first) == AMIWEATHER_PREFS_OK);
+    CHECK(preferences.saved_location_count == 1 && preferences.default_location_index == 0);
+    CHECK(amiweather_preferences_set_default_location(&preferences, &second) == AMIWEATHER_PREFS_OK);
+    CHECK(preferences.saved_location_count == 2 && preferences.default_location_index == 1);
+    CHECK(amiweather_preferences_remove_location(&preferences, 1) == AMIWEATHER_PREFS_OK);
+    CHECK(preferences.has_default_location && preferences.default_location_index == 0);
+    CHECK(amiweather_preferences_remove_location(&preferences, 0) == AMIWEATHER_PREFS_OK);
+    CHECK(!preferences.has_default_location && preferences.saved_location_count == 0);
+}
+
 int main(void)
 {
     test_defaults_and_units();
@@ -264,6 +336,8 @@ int main(void)
     test_query_units();
     test_explicit_file_io();
     test_resolution_and_persistent_save();
+    test_resolution_matrix_and_failures();
+    test_default_location_change();
     if (failures) { fprintf(stderr, "%d preference test(s) failed\n", failures); return 1; }
     puts("AmiWeather preference tests passed");
     return 0;
