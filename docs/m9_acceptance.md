@@ -1,42 +1,36 @@
 # M9 manual Amiga acceptance
 
-This milestone is not runtime-qualified until every applicable check below is
-completed on the AmigaOS 3.1 FS-UAE system. Record observed RC/RESULT values and
-the hashes of the tested binaries.
+M9 is not fully runtime-qualified until the remaining checks below pass on the
+AmigaOS 3.1 FS-UAE system. Record the tested binary hashes and observations.
 
-## Recorded FS-UAE ARexx example retest
+## Runtime evidence already recorded
 
-The corrected classic ARexx examples passed their real FS-UAE retest. This
-qualifies the example-script error handling, not the remaining M9 phases.
+Real FS-UAE testing has confirmed:
 
-- M9ARexx and GetWeather completed with RC 0 for VERSION, STATUS, location,
-  temperature, condition, humidity, and wind queries. GetWeather returned live
-  Tonstad, Agder, Norway data.
+- M9ARexx and GetWeather returned RC 0 for VERSION, STATUS, GET LOCATION,
+  GET TEMPERATURE, GET CONDITION, GET HUMIDITY, and GET WIND. GetWeather
+  returned live Tonstad, Agder, Norway data.
 - `SetLocation.rexx "Tonstad"` returned LOCATION RC 0 and RESULT
-  `Tonstad, Agder, Norway`, changed only the active location, and reported that
-  preferences were not saved.
-- Ambiguous Oslo, Reykjavik, and New York searches returned RC 14. Unresolved
-  Port-Aux-Francais and Longyearbyen searches returned RC 15. The scripts
-  printed the captured RC/RESULT, avoided the classic ARexx source-line abort,
-  and returned AmiWeather's RC to the Shell.
+  `Tonstad, Agder, Norway`. It changed the active location and explicitly did
+  not save preferences.
+- Ambiguous Reykjavik, Oslo, Manila, and New York searches returned RC 14.
+  This is the required no-guessing behavior.
+- Unresolved Port-Aux-Francais and Longyearbyen searches returned the
+  controlled location/geocoding failure RC 15.
+- The corrected scripts printed RC/RESULT, avoided the classic ARexx
+  source-line abort, and returned AmiWeather's application RC to the Shell.
 - `SetDefault.rexx "Tonstad"` completed LOCATION first, then SETDEFAULT with
-  RC 0 and RESULT `OK`, and reported that Tonstad was saved persistently.
+  RC 0 and RESULT `OK`, and reported the persistent save.
 - `SetDefault.rexx "Oslo"` returned LOCATION RC 14 and exited 14 without
-  invoking SETDEFAULT. This confirms the failure gate and preserves the
-  production ambiguity rule.
+  invoking SETDEFAULT.
 
-The correction is `OPTIONS FAILAT 21`: classic ARexx otherwise aborts a script
-when the host command RC reaches its default failure threshold. Each script
-also clears RESULT before dispatch, then captures and prints RC/RESULT before
-making an explicit success/failure decision.
+The example correction is `OPTIONS FAILAT 21`: classic ARexx otherwise aborts
+when a host RC reaches its default failure threshold. Each script clears RESULT,
+then captures and reports RC/RESULT before deciding whether to continue.
 
-## Preparation and reversible preference backup
+## Reversible preference backup
 
-The prepared host files map to `Work:AmiWeather`,
-`ABBS:Doors/AmiWeather/AmiWeatherDoor`, and `Work:AmiWeather-ARexx/`.
-
-Before removing preferences, create `Work:M9PrefsBackup` and copy each existing
-file separately if it exists:
+Before a destructive preference test, create a host-persistent backup:
 
 ```text
 MakeDir Work:M9PrefsBackup
@@ -44,43 +38,7 @@ Copy ENV:AmiWeather/preferences TO Work:M9PrefsBackup/preferences.env
 Copy ENVARC:AmiWeather/preferences TO Work:M9PrefsBackup/preferences.envarc
 ```
 
-A missing-source error is harmless and means that copy did not exist. Do not
-delete the backup until qualification is complete. Remove the live test copies:
-
-```text
-Delete ENV:AmiWeather/preferences
-Delete ENVARC:AmiWeather/preferences
-```
-
-## Phase A: clean first run
-
-1. Launch `Work:AmiWeather`.
-2. Confirm Oslo is not fetched and the window says `No default location configured.`
-3. Confirm Change opens the normal Open-Meteo location search and select a location.
-4. Quit without using Set Current as Default or Save.
-5. Relaunch and confirm there is still no default and no Oslo fetch.
-
-## Phase B: persistence
-
-6. Select a location and choose Location / Set Current as Default.
-7. Use `Type ENV:AmiWeather/preferences` and
-   `Type ENVARC:AmiWeather/preferences`; confirm both exist and describe the
-   selected location/default.
-8. Quit and relaunch; confirm that location loads automatically.
-9. Change temperature and wind units in Preferences and save them.
-10. Quit and relaunch; confirm both units persist.
-11. Reboot the emulated Amiga. This step is mandatory.
-12. Relaunch and confirm the same default and both units survived the reboot.
-
-## Phase C: shared Door state and ABBS regression
-
-13. Start ABBS 3.3 and OPEN the AmiWeather door.
-14. Confirm its initial location and units match the GUI preferences.
-15. Exercise H, D, 7, A, W, L, and R, then Q; confirm clean ABBS return.
-16. Back up the now-qualified preference files again, remove both live copies,
-    and OPEN the Door.
-17. Confirm no Oslo fetch, the no-default/Press L guidance, and usable L search.
-18. Q cleanly, then restore both preference files with:
+A missing-source error means that copy did not exist. Restore with:
 
 ```text
 MakeDir ENV:AmiWeather
@@ -89,74 +47,96 @@ Copy Work:M9PrefsBackup/preferences.env TO ENV:AmiWeather/preferences
 Copy Work:M9PrefsBackup/preferences.envarc TO ENVARC:AmiWeather/preferences
 ```
 
-## Phase D: ARexx commands
+Do not delete `Work:M9PrefsBackup` until qualification is complete.
 
-19. Start the GUI and run `RX Work:AmiWeather-ARexx/M9ARexx.rexx`. Its seven
-    commands must all show RC 0 and sensible RESULT values; this also proves the
-    public `AMIWEATHER` host is reachable.
-20. Retest the corrected successful examples exactly as follows. Tonstad is the
-    location that passed this qualification run.
+## Remaining FS-UAE qualification
+
+### A. Clean first run and reboot persistence
+
+1. Back up preferences, then remove both live copies:
+
+```text
+Delete ENV:AmiWeather/preferences
+Delete ENVARC:AmiWeather/preferences
+```
+
+2. Launch `Work:AmiWeather`. Confirm no Oslo fetch, the useful no-default
+   message, and working Change location selection.
+3. Quit without saving and relaunch. Confirm no default remains.
+4. With the GUI running, set Tonstad persistently:
+
+```text
+RX Work:AmiWeather-ARexx/SetDefault.rexx "Tonstad"
+```
+
+5. Confirm LOCATION and SETDEFAULT both return RC 0. In GUI Preferences choose
+   Fahrenheit and mph and save.
+6. Confirm both copies contain Tonstad, Fahrenheit, and mph:
+
+```text
+Type ENV:AmiWeather/preferences
+Type ENVARC:AmiWeather/preferences
+```
+
+7. Quit AmiWeather and perform an actual AmigaOS reboot.
+8. Relaunch AmiWeather. Confirm Tonstad, Fahrenheit, and mph survived. A simple
+   process restart is not sufficient for this check.
+
+### B. Shared GUI and Door preferences / ABBS regression
+
+9. With the persisted state from A, start ABBS 3.3 and OPEN AmiWeatherDoor.
+10. Confirm the Door starts at Tonstad and displays Fahrenheit and mph.
+11. Exercise H, D, 7, A, W, and R; confirm each remains usable.
+12. Press Q and confirm clean return to ABBS with no Shell exposure.
+13. Do not add or expect an ARexx port from AmiWeatherDoor.
+
+### C. GUI ARexx port lifecycle
+
+14. Start AmiWeather and prove the host is active:
+
+```text
+RX Work:AmiWeather-ARexx/M9ARexx.rexx
+```
+
+15. Confirm the commands return RC 0. Quit AmiWeather normally.
+16. Run the same command and confirm AMIWEATHER is unavailable rather than
+    reaching a stale port.
+17. Relaunch AmiWeather, rerun the script, and confirm RC 0 responses return.
+
+### D. Port collision
+
+18. Keep the first AmiWeather instance running and responsive to VERSION.
+19. Launch a second AmiWeather instance. This is the safest collision test with
+    existing tools; do not install or write a dummy-port utility.
+20. Confirm the second instance handles the occupied name without crashing and
+    commands still reach the original owner.
+21. Quit the second instance. Confirm the original AMIWEATHER port still works.
+22. Quit the original instance and confirm the port disappears.
+23. If instance identity cannot be distinguished safely, record collision
+    testing as remaining rather than weakening or instrumenting production code.
+
+### E. Optional persistence failure
+
+24. Perform this only if ENVARC publication can be made temporarily unavailable
+    without risking other files. Back up both preference copies first.
+25. Attempt SAVE, confirm the GUI/ARexx reports failure, then restore access and
+    confirm the previous preferences still load.
+26. If no safe reversible simulation exists, record this optional test as not
+    performed. Do not damage the filesystem merely to force rollback.
+
+## Previously qualified ARexx example commands
+
+These exact commands produced the evidence recorded above:
 
 ```text
 RX Work:AmiWeather-ARexx/GetWeather.rexx
 RX Work:AmiWeather-ARexx/SetLocation.rexx "Tonstad"
-RX Work:AmiWeather-ARexx/GetWeather.rexx
 RX Work:AmiWeather-ARexx/SetDefault.rexx "Tonstad"
-```
-
-    SetLocation must print `LOCATION RC= 0`, change the active report, and not
-    save preferences. After its GetWeather check, quit and relaunch the GUI;
-    confirm the earlier persistent default returns. Then run SetDefault with
-    the GUI open. It must print successful LOCATION and SETDEFAULT lines before
-    reporting persistence. Quit and relaunch once more and confirm
-    Tonstad is now the persistent default.
-
-    Then exercise the legitimate ambiguity path:
-
-```text
 RX Work:AmiWeather-ARexx/SetLocation.rexx "Oslo"
 RX Work:AmiWeather-ARexx/SetDefault.rexx "Oslo"
-```
-
-    Each must print `LOCATION RC= 14`, print the captured RESULT, and exit 14
-    without an uncontrolled ARexx source-line abort. SetDefault must not run or
-    print SETDEFAULT after that failure. Confirm the active location/default
-    remains unchanged. The observed controlled RC 15 path can be repeated with:
-
-```text
 RX Work:AmiWeather-ARexx/SetLocation.rexx "Port-Aux-Francais"
 ```
 
-    It must report and return RC 15 without a source-line abort. It is not a
-    qualified successful location query.
-21. Individually exercise REFRESH, an unambiguous LOCATION, SET TEMPUNIT F,
-    SET WINDUNIT MPH, SAVE, and SETDEFAULT. Confirm RC 0, GUI state changes,
-    and persisted full preferences.
-22. Use a deliberately broad ambiguous query. Confirm RC 14 and that the prior
-    active location/report remain unchanged.
-23. Send `BOGUS` (RC 10), `SET TEMPUNIT X` (RC 11), and a 256-byte command if
-    practical (RC 11). Confirm no crash. With no report/location, confirm the
-    applicable GET and REFRESH commands return RC 12 and 13.
-24. If a location search/network request fails, confirm RC 15. If saving is
-    made to fail safely, confirm RC 16. An unavailable callback/state must use
-    RC 17. Do not damage the filesystem merely to force these paths.
-
-## Phase E: port lifecycle
-
-25. Quit normally and confirm an ARexx command reports that host AMIWEATHER is
-    unavailable.
-26. Relaunch, rerun VERSION, and confirm RC 0 and the expected RESULT.
-27. Launch a second AmiWeather instance. Confirm it handles the name collision
-    without crashing and that commands still reach the original owner.
-28. Quit the second instance and confirm the original port still works. Quit
-    the original and confirm the port disappears.
-29. Attempt a pending-message shutdown test only if a safe repeatable ARexx
-    sender is available; otherwise record it as not performed.
-
-## Optional safe failure injection
-
-Only if the test filesystem can be made temporarily unwritable without risking
-other data, block ENVARC publication, invoke SAVE, verify RC 16/UI failure, and
-confirm the previous preferences still load. Restore access immediately. If no
-safe simulation is available, record this check as not performed; do not use a
-destructive rollback experiment.
+Tonstad is the qualified success case. Oslo demonstrates controlled RC 14 and
+SETDEFAULT gating. Port-Aux-Francais is an observed controlled RC 15 failure;
+it must not be described as a successful test location.
