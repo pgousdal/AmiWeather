@@ -61,6 +61,7 @@ ifeq ($(PLATFORM),posix)
 	$(BUILD)/test_preferences
 	$(MAKE) $(BUILD)/test_arexx PLATFORM=posix AMIAPI_DIR="$(AMIAPI_DIR)"
 	$(BUILD)/test_arexx
+	sh tests/test_arexx_examples.sh
 else
 	@echo "Fixture tests run on the POSIX host: make PLATFORM=posix test"
 endif
