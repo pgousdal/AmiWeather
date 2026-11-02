@@ -174,7 +174,7 @@ static void show_about(struct Window *parent)
     about.es_Title = (UBYTE *)"About AmiWeather";
     about.es_TextFormat = (UBYTE *)text;
     about.es_GadgetFormat = (UBYTE *)"OK";
-    EasyRequest(parent, &about, NULL);
+    EasyRequestArgs(parent, &about, NULL, NULL);
 }
 
 static void draw_clipped(struct RastPort *rp, WORD x, WORD y,
@@ -969,7 +969,7 @@ static void details_window(struct Window *parent, const struct ApplicationState 
       about.es_Title = (CONST_STRPTR)"Weather Details";
       about.es_TextFormat = (CONST_STRPTR)text;
       about.es_GadgetFormat = (CONST_STRPTR)"OK";
-      EasyRequest(parent, &about, NULL); }
+      EasyRequestArgs(parent, &about, NULL, NULL); }
 }
 
 static void hourly_window(struct Screen *screen, APTR visual_info,
