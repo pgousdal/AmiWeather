@@ -1,3 +1,7 @@
+#ifdef AMIWEATHER_AMIGA
+#include <dos/dos.h>
+#include <proto/dos.h>
+#endif
 #include <amiweather/preferences.h>
 
 #include <errno.h>
@@ -333,6 +337,24 @@ enum AmiWeatherPreferencesError amiweather_preferences_serialize(
     return AMIWEATHER_PREFS_OK;
 }
 
+/* A missing file (or drawer) is not an error: it is the first run.  The
+ * Amiga C library does not always set errno to ENOENT, so ask DOS. */
+static int file_missing(const char *path)
+{
+#ifdef AMIWEATHER_AMIGA
+    BPTR lock;
+    LONG error;
+    if (errno == ENOENT) return 1;
+    lock = Lock((CONST_STRPTR)path, ACCESS_READ);
+    if (lock) { UnLock(lock); return 0; }
+    error = IoErr();
+    return error == ERROR_OBJECT_NOT_FOUND || error == ERROR_DIR_NOT_FOUND;
+#else
+    (void)path;
+    return errno == ENOENT;
+#endif
+}
+
 enum AmiWeatherPreferencesError amiweather_preferences_load_file(
     const char *path, struct AmiWeatherPreferences *preferences)
 {
@@ -342,7 +364,7 @@ enum AmiWeatherPreferencesError amiweather_preferences_load_file(
     enum AmiWeatherPreferencesError result;
     if (!path || !preferences) return AMIWEATHER_PREFS_INVALID;
     file = fopen(path, "rb");
-    if (!file) return errno == ENOENT ? AMIWEATHER_PREFS_NOT_FOUND : AMIWEATHER_PREFS_IO_ERROR;
+    if (!file) return file_missing(path) ? AMIWEATHER_PREFS_NOT_FOUND : AMIWEATHER_PREFS_IO_ERROR;
     data = (char *)malloc(PREFERENCES_FILE_SIZE + 1);
     if (!data) { fclose(file); return AMIWEATHER_PREFS_IO_ERROR; }
     length = fread(data, 1, PREFERENCES_FILE_SIZE + 1, file);
@@ -413,6 +435,34 @@ enum AmiWeatherPreferencesError amiweather_preferences_load_resolved(
     return archive_result;
 }
 
+/* ENV: is a RAM copy.  On OS 3.2 the ENV handler mirrors ENVARC:, and the
+ * temporary + rename dance of save_file fails there, so on Amiga the ENV:
+ * copy is written in place.  ENVARC: keeps the safe save. */
+static enum AmiWeatherPreferencesError save_env_copy(
+    const char *path, struct AmiWeatherPreferences *preferences)
+{
+#ifdef AMIWEATHER_AMIGA
+    char *data;
+    size_t length;
+    FILE *file;
+    int failed = 0;
+    enum AmiWeatherPreferencesError result;
+    data = (char *)malloc(PREFERENCES_FILE_SIZE);
+    if (!data) return AMIWEATHER_PREFS_IO_ERROR;
+    result = amiweather_preferences_serialize(preferences, data,
+                                              PREFERENCES_FILE_SIZE, &length);
+    if (result != AMIWEATHER_PREFS_OK) { free(data); return result; }
+    file = fopen(path, "wb");
+    if (!file) { free(data); return AMIWEATHER_PREFS_IO_ERROR; }
+    if (fwrite(data, 1, length, file) != length) failed = 1;
+    if (fclose(file) != 0) failed = 1;
+    free(data);
+    return failed ? AMIWEATHER_PREFS_IO_ERROR : AMIWEATHER_PREFS_OK;
+#else
+    return amiweather_preferences_save_file(path, preferences);
+#endif
+}
+
 enum AmiWeatherPreferencesError amiweather_preferences_save_persistent(
     const char *envarc_path, const char *env_path,
     struct AmiWeatherPreferences *preferences)
@@ -426,7 +476,7 @@ enum AmiWeatherPreferencesError amiweather_preferences_save_persistent(
     result = amiweather_preferences_save_file(envarc_path, preferences);
     if (result != AMIWEATHER_PREFS_OK)
         return result;
-    result = amiweather_preferences_save_file(env_path, preferences);
+    result = save_env_copy(env_path, preferences);
     if (result != AMIWEATHER_PREFS_OK) {
         if (previous_result == AMIWEATHER_PREFS_OK)
             (void)amiweather_preferences_save_file(envarc_path, &previous);
